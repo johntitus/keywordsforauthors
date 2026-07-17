@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* "A workbench, not a rocket ship" — plain, competent, understated (brief §7). */
+@theme {
+  --color-canvas: #fdfcfa;
+}
+
+body {
+  background: var(--color-canvas);
+}

@@ -1,0 +1,36 @@
+name = "kfa-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# --- D1: relational + snapshot table (TechStack.md). Snapshot rows written
+# --- only on real fetches, never cache hits (brief §5).
+[[d1_databases]]
+binding = "DB"
+database_name = "kfa-db"
+database_id = "REPLACE_WITH_D1_ID"   # `wrangler d1 create kfa-db`
+migrations_dir = "drizzle"
+
+# --- KV: DataForSEO response cache on the §5 stable keys — the margin.
+[[kv_namespaces]]
+binding = "CACHE"
+id = "REPLACE_WITH_KV_ID"            # `wrangler kv namespace create CACHE`
+
+# --- Durable Object: race-free per-user credit deduction + idempotency (§8.2).
+[[durable_objects.bindings]]
+name = "CREDIT_LEDGER"
+class_name = "CreditLedger"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["CreditLedger"]
+
+# --- Monthly head-term bulk_search_volume refresh (brief §5).
+[triggers]
+crons = ["0 6 1 * *"]
+
+# Secrets (set with `wrangler secret put NAME`, or .dev.vars locally):
+#   DATAFORSEO_LOGIN, DATAFORSEO_PASSWORD, CLERK_SECRET_KEY, STRIPE_SECRET_KEY,
+#   STRIPE_WEBHOOK_SECRET, RESEND_API_KEY
+[vars]
+ENVIRONMENT = "development"

@@ -1,0 +1,17 @@
+# apps/api local secrets — Wrangler loads this file for `wrangler dev`.
+# Copy to `.dev.vars` (gitignored) and fill in. In production set these with
+# `wrangler secret put NAME` instead.
+
+# DataForSEO (HTTP basic auth login/password from your dashboard)
+DATAFORSEO_LOGIN=""
+DATAFORSEO_PASSWORD=""
+
+# Clerk (backend/secret key, starts with sk_)
+CLERK_SECRET_KEY=""
+
+# Stripe
+STRIPE_SECRET_KEY=""
+STRIPE_WEBHOOK_SECRET=""
+
+# Resend (transactional email)
+RESEND_API_KEY=""
