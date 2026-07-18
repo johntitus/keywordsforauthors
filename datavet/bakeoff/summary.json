@@ -1,0 +1,93 @@
+[
+  {
+    "keyword": "cozy mystery books",
+    "dfs": {
+      "costUsd": 0.0033,
+      "totalCompetitors": 592,
+      "organic": 50,
+      "sponsored": 2,
+      "organicFormats": {
+        "Kindle": 20,
+        "Paperback": 17,
+        "Audiobook": 7,
+        "Mass Market Paperback": 6
+      }
+    },
+    "rapid": {
+      "returned": 48,
+      "enriched": 20,
+      "callsThisDive": 5,
+      "detailCalls": 4,
+      "totalProducts": 923,
+      "bsrInBooks": 8,
+      "bsrStores": {
+        "in Books": 7,
+        "Free in Kindle Store": 4,
+        "in Kindle Store": 4
+      },
+      "formatNone": 0,
+      "indiePublishers": 0
+    }
+  },
+  {
+    "keyword": "gratitude journal",
+    "dfs": {
+      "costUsd": 0.0033,
+      "totalCompetitors": 64589,
+      "organic": 50,
+      "sponsored": 4,
+      "organicFormats": {
+        "Paperback": 22,
+        "Hardcover": 19,
+        "Unknown Binding": 3,
+        "Flexibound": 1,
+        "Journal": 1,
+        "Diary": 1,
+        "Spiral-bound": 1
+      }
+    },
+    "rapid": {
+      "returned": 48,
+      "enriched": 20,
+      "callsThisDive": 5,
+      "detailCalls": 4,
+      "totalProducts": 10700,
+      "bsrInBooks": 7,
+      "bsrStores": {
+        "in Office Products": 13,
+        "in Books": 7
+      },
+      "formatNone": 32,
+      "indiePublishers": 1
+    }
+  },
+  {
+    "keyword": "keto cookbook",
+    "dfs": {
+      "costUsd": 0.0033,
+      "totalCompetitors": 41566,
+      "organic": 50,
+      "sponsored": 4,
+      "organicFormats": {
+        "Paperback": 40,
+        "Hardcover": 5,
+        "Kindle": 5
+      }
+    },
+    "rapid": {
+      "returned": 48,
+      "enriched": 20,
+      "callsThisDive": 5,
+      "detailCalls": 4,
+      "totalProducts": 5224,
+      "bsrInBooks": 18,
+      "bsrStores": {
+        "in Books": 18,
+        "in Kitchen & Dining": 1,
+        "in Kindle Store": 1
+      },
+      "formatNone": 1,
+      "indiePublishers": 7
+    }
+  }
+]

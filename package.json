@@ -16,7 +16,8 @@
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
-    "db:generate": "npm run db:generate --workspace @kfa/api"
+    "db:generate": "npm run db:generate --workspace @kfa/api",
+    "datavet": "node datavet/server.mjs"
   },
   "devDependencies": {
     "typescript": "^5.7.3"

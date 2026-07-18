@@ -5,7 +5,11 @@
 
 // Scope: Amazon US, Books only (brief §1). Labs Amazon supports US/EG/SA/AE only.
 export const LOCATION_CODE_US = 2840;
+// Labs endpoints (related_keywords, ranked_keywords) take a plain language code.
 export const LANGUAGE_CODE = "en";
+// ⚠️ The Merchant endpoint rejects "en" (40501 Invalid Field) — it wants the
+// locale form. Verified 2026-07-18. Keep these two separate.
+export const MERCHANT_LANGUAGE_CODE = "en_US";
 export const DEPARTMENT_BOOKS = "Books";
 
 // SEARCH — related_keywords (brief §3.1). depth 3 is the decided sweet spot;

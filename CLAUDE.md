@@ -6,7 +6,33 @@ see who ranks, and reverse-engineer competitors' books into the keywords they ow
 **Full context lives in two docs — read them before non-trivial work:**
 - [ProjectBrief.md](ProjectBrief.md) — the product, data source, cost/credit model, caching, positioning, open questions. This is the source of truth for *what* and *why*.
 - [TechStack.md](TechStack.md) — the settled stack and integration seams. Source of truth for *how it's built*.
+- [TODO.md](TODO.md) — deferred ideas/backlog (relevance sort, junk-keyword filtering).
 - [designmockup/Keywords for Authors.html](designmockup/) — a bundled Claude-design mockup of the **marketing landing page** (two visual directions: "1a Slate workbench" / "1b Friendlier warm", same layout & copy). It is the public homepage, *not* the in-app tool UI. It's a self-contained gzip+base64 bundle; open it in a browser to view.
+
+## ⚠️ Deep dive changed sources — read before touching it (decided 2026-07-18)
+
+After live experimentation (see `datavet/` + `datavet/bakeoff/BAKEOFF.md`), the **DEEP DIVE
+switched from DataForSEO Merchant to RapidAPI `real-time-amazon-data`** — because RapidAPI
+returns **BSR** (+ author, publisher, page count), which DataForSEO can't. **DataForSEO still
+powers SEARCH and REVERSE ASIN** (unchanged). ProjectBrief §2/§3.3/§4/§6 carry the formal
+callouts; memory `bsr-via-rapidapi-hybrid` has the load-bearing details. Settled shape:
+
+- Search (1 quota call) → cap **top 20** competitors (title, ASIN, cover, price, rating).
+- BSR enrichment: `product-details` per ASIN. **Billed per ASIN *returned*** (batching doesn't
+  save; drops are free); search = 1. **Enrich ALL 20** so no half-empty column.
+- **RapidAPI rate-limits bursts (~10 concurrent → 429).** Enrich in **batches of 3, fired
+  all-concurrently** (7 requests for 20 books ≈ 4.5s first paint / 10s total). 429s retry with
+  backoff. Per-ASIN BSR **cache** (KV in prod) is the margin lever — warm repeats ≈ 1 call.
+- SERP purity computed from `bsrStore` ("in Books"/"Kindle" = real book; "in Office Products"
+  = journal). Deep dive is priced at **~5 credits** (exception to the flat-1-credit rule; §4).
+
+**`datavet/` is the experimental reference tool** — a standalone Node server (`node datavet/server.mjs`,
+:5050) + single `index.html`, decoupled from Cloudflare. It implements the full RapidAPI deep-dive
+flow (progressive render, cache, quota meter) and the DataForSEO search/reverse-asin vetting. **Keep
+it for reference; it is not the product.** Needs `RAPIDAPI_KEY` + DataForSEO creds in `apps/api/.dev.vars`.
+
+**▶ NEXT STEP: build the real tool** in `apps/` (Worker + React SPA) — port the datavet deep-dive
+logic into the real architecture (KV cache, credits, Clerk auth). Not started yet.
 
 ## Current state
 

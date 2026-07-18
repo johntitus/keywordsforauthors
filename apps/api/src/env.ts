@@ -11,6 +11,8 @@ export interface Env {
   // Secrets (wrangler secret put / .dev.vars)
   DATAFORSEO_LOGIN: string;
   DATAFORSEO_PASSWORD: string;
+  // RapidAPI real-time-amazon-data — powers the deep dive (BSR hybrid, 2026-07-18).
+  RAPIDAPI_KEY: string;
   CLERK_SECRET_KEY: string;
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;

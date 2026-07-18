@@ -54,9 +54,21 @@ Merchant gives you the whole SERP for one flat task fee.
   invoices._
 - **Merchant Amazon Products/ASIN**: task-only.
   Live $0.005/SERP · Priority queue $0.003 · Standard queue $0.0015 (45 min turnaround)
+  _**Measured 2026-07-18:** live Books SERPs actually billed **$0.0033** each, not
+  $0.005. Cheaper than budgeted — good. Confirm against invoices._
 
 Every response includes a `cost` field at both the top level and per task. **Read
 it and log it** rather than estimating.
+
+### Second data source: RapidAPI `real-time-amazon-data` (added 2026-07-18)
+
+The **deep dive** now runs on **RapidAPI `real-time-amazon-data`**, not the Merchant
+call — it's the only source that returns **BSR** (see §3.3, §6). Entirely different
+billing: a flat **monthly subscription** (Pro $25/10k calls · Ultra $75/50k · Mega
+$150/200k; overages $0.003/$0.002/$0.001), billed **per ASIN returned**, not
+pay-per-use. Verified via the `x-ratelimit-requests-remaining` response header.
+DataForSEO Labs still powers Search and Reverse ASIN — so the stack is now two
+vendors. Full source bakeoff: `datavet/bakeoff/BAKEOFF.md`.
 
 ### Hard constraint on future markets
 
@@ -91,6 +103,16 @@ related keywords — the endpoint mirrors Amazon's store-wide related searches.
 returns a very different neighbourhood than "stress management." Filter the rest
 client-side; it's just short strings.
 
+> ⚠️ **Nuanced by live data, 2026-07-18.** It's not simply "book-native = better."
+> Measured: `stress management workbook` returned **only the seed** (Amazon has no
+> related searches for it); `stress management` returned 72 but top-heavy with
+> **supplements** (magnesium glycinate 301,930, ashwagandha); `journal` / `gratitude
+> journal` returned **office supplies** (pens, highlighters); yet `anxiety workbook
+> for kids` (4 words) returned 92 genuinely on-target (dbt/cbt workbook, mental
+> health books). Takeaways: **volumes are store-wide, not book-specific** (caveat
+> them in the UI); relevance depends on the seed's *neighbourhood* more than its
+> length; and client-side book filtering is necessary (see [TODO.md](TODO.md)).
+
 **Returns per item:** `keyword`, `search_volume`, `last_updated_time`, `depth`,
 and a nested `related_keywords` array.
 
@@ -102,9 +124,14 @@ and a nested `related_keywords` array.
 
 Keywords a given ASIN ranks for on Amazon.
 
-**One ASIN per task** — `asin` is a single string, no plural form. Batch by
-sending multiple task objects in one POST array (limits: 2000 calls/min, 30
-simultaneous). Still billed per task.
+**One ASIN per task** — `asin` is a single string, no plural form.
+
+> ⚠️ **Corrected 2026-07-18.** The earlier claim that you can batch multiple task
+> objects in one POST is **wrong for `/live` endpoints** — they accept exactly one
+> task per request (`40000 You can set only one task at a time`). Fire one HTTP
+> request per ASIN (in parallel; limits: 2000 calls/min, 30 simultaneous). Batching
+> multiple tasks in one array is only for the queued `task_post` flow. Still billed
+> per task.
 
 **Params:** `asin` (required), `location_code`, `language_code`, `limit` (default
 100, max 1000), `ignore_synonyms`, `filters` (max 8), `order_by` (max 3),
@@ -125,6 +152,29 @@ range extender**:
 `total_count` was **11,789**. A WiFi extender does not rank for "baby girl" — it
 appeared at position 54 on a broad SERP and the endpoint counted it. Shipping this
 raw means telling KDP authors their book ranks for "baby girl."
+
+> ⚠️ **Could not reproduce, 2026-07-18.** Live, that same ASIN `B00R92CL5E` returned
+> only **20** keywords, all NETGEAR-relevant — no "baby girl," no junk. A real book
+> (`B0GM9TXP8J`) returned 44, all on-topic. Either the endpoint changed since those
+> docs or the example was always atypical. **The "dangerous unfiltered" premise looks
+> overstated on current data** — the filter mostly trims the low-volume tail, not
+> garbage. Re-test on real book ASINs before treating the filter as load-bearing;
+> this reopens §10.1 in a good way (the filter may be doing less than feared).
+
+#### Sponsored placements are mixed in (found 2026-07-18)
+
+`ranked_keywords` returns **one row per SERP placement**, and includes
+**sponsored** results (`ranked_serp_element.serp_item.type == "amazon_paid"`), not
+just organic. A book that both ranks organically *and* runs an ad for a keyword
+appears **twice** with different `rank_absolute` (observed: `wrestling book` at
+rank 11 organic + rank 24 sponsored on `B0GM9TXP8J`).
+
+Two consequences:
+- **Filter to organic** (`type == "amazon_serp"`) unless you specifically want
+  advertised keywords — a book *paying* for a term ≠ a book *ranking* for it. Same
+  rule the deep dive already uses (§3.3). Fold this into the §10.1 filter design.
+- **Dedupe by `(asin, keyword)`** (keep the best/lowest rank) before counting or
+  building any keyword→book index, or you double-count.
 
 **Mandatory server-side filter:**
 
@@ -166,15 +216,53 @@ for quality, not cost.**
 
 ---
 
-### 3.3 DEEP DIVE — `merchant/amazon/products/live/advanced`
+### 3.3 DEEP DIVE — `real-time-amazon-data` (RapidAPI)
+
+> 🔄 **DECISION 2026-07-18 — deep dive moved to RapidAPI, off DataForSEO Merchant.**
+> The DataForSEO Merchant content below is retained as reference (its `type`/purity
+> reasoning still informed the design), but the deep dive now runs on RapidAPI
+> `real-time-amazon-data`. Why: RapidAPI returns **BSR** (plus publisher and page
+> count), which DataForSEO cannot — this reverses §6. Shape of the new deep dive:
+>
+> - **1 search call** → up to 48 Books competitors (title, ASIN, price, rating,
+>   reviews, format, **cover image**). Capped to the **top 20** shown.
+> - **BSR enrichment** — one `product-details` lookup per shown ASIN → BSR,
+>   publisher, page count. **Billed per ASIN returned** (batching doesn't save quota;
+>   dropped ASINs are free); search = 1. Cold dive ≈ 1 + 20 = 21 RapidAPI calls.
+> - **Per-ASIN BSR cache** is the margin lever — recurring bestsellers are free on
+>   repeat (verified 11→1 units on a warm dive; the real build uses Workers KV + TTL).
+> - **SERP purity is now computed from `bsrStore`**, not format labels: a row ranking
+>   "in Books"/"in Kindle Store" is a real book; "in Office Products" is a blank
+>   journal/planner. Better than the format label, which RapidAPI often omits for
+>   low-content. Verified: `gratitude journal` → 26% purity (14/19 rank in Office
+>   Products). Competitor count = RapidAPI `total_products`, labelled "indexed
+>   results" (it diverges from Amazon's `se_results_count`).
+> - **BSR is per-format and only comparable when it reads "in Books"** — a Kindle or
+>   Audiobook rank is a different chart. Normalise to print, or flag non-Books ranks.
+>
+> Full analysis and cost math: `datavet/bakeoff/BAKEOFF.md`. The rest of this section
+> describes the superseded DataForSEO Merchant call.
 
 First page of Amazon Books results for one keyword.
 
-**Params:** `keyword`, `department: "Books"`, `sort_by: "relevance"`, `location_code`
+**Params:** `keyword`, `department: "Books"`, `sort_by: "relevance"`, `location_code`,
+`language_code: "en_US"`
 
-**Flat $0.005.** Task-only billing means you get the entire first page — 16 to 48
-results depending on layout — for one fee. No per-item charge. This is the
-cheapest action _and_ the most decision-relevant.
+> ⚠️ **Corrected 2026-07-18.** Merchant wants the **locale** language code `"en_US"`.
+> Plain `"en"` (what the Labs endpoints use) returns `40501 Invalid Field`. The two
+> API families differ — don't share one language constant.
+
+**Flat, task-only billing** — measured **$0.0033** live (not the $0.005 budgeted),
+one fee regardless of result count. This is the cheapest action _and_ the most
+decision-relevant.
+
+> ⚠️ **Page size corrected 2026-07-18 (answers §4).** Not "16–48." The endpoint
+> returns **up to ~100 organic results** (`amazon_serp`, capped by a `depth` param,
+> default 100) **plus 6–36 sponsored** (`amazon_paid`) — total items ~106–136.
+> Measured across 5 book keywords: organic 96–100, sponsored 6–36, `se_results_count`
+> 41k–84k. So it's the **top ~100**, not a literal visual "page 1." Don't label UI
+> columns "P1" — call it "top 100." SERP purity over 100 organic is a more stable
+> denominator than over ~48, which is good.
 
 **Returns per result:** `rank_absolute`, `rank_group`, `title`, `asin`,
 `price_from`, `price_to`, `currency`, `rating.value`, `rating.votes_count`,
@@ -222,6 +310,18 @@ ASIN** (paste ten, spend ten — reads as obvious, not as a rule).
 Do not price actions differently even though underlying costs differ 6×. Variable
 credit costs are what make credit systems confusing; users stop clicking things
 when they don't know the price. Eat the variance.
+
+> 🔄 **DECISION 2026-07-18 — deep dive = ~5 credits, a deliberate exception.** The
+> flat-1-credit rule assumed DataForSEO costs, where deep dive was the *cheapest*
+> action ($0.0033). Moving it to RapidAPI with per-ASIN BSR enrichment (§3.3) makes
+> it the **most expensive** action (~21 API calls cold, cache-amortised over time),
+> so 1 credit would sell the priciest action at the cheapest price. At 5 credits it
+> stays margin-positive at pack prices ($0.30–0.60 revenue/dive). **The "eat the
+> variance" logic still holds *within* the DataForSEO actions** (Search, Reverse
+> ASIN); the RapidAPI deep dive is a genuinely different cost class, so it gets its
+> own price. **⚠️ Consequence: the blended-cost tables and the $0.021/credit design
+> number below predate this and need re-derivation** once the RapidAPI tier and
+> steady-state cache hit rate are known — treat them as DataForSEO-era baselines.
 
 ### Blended cost per credit
 
@@ -411,6 +511,15 @@ when you write the first row.**
 `merchant/amazon/asin/live/advanced` — a separate per-ASIN call at $0.005 each
 (ten products = 5¢, an 11× jump on a deep dive).
 
+> 🔄 **REVERSED 2026-07-18 for the deep dive (see §3.3).** BSR is now **in** the
+> product, sourced from RapidAPI `real-time-amazon-data` — it's the deep dive's
+> headline differentiator, and per-ASIN BSR caching keeps it affordable. Publication
+> date and page count also come along. The **honesty positioning still holds**: BSR
+> is best-seller *rank*, not sales or revenue — keep "we show demand and competition,
+> not sales estimates" wherever a user might mistake rank for earnings. The
+> DataForSEO-cost reasoning below is retained as the record of why BSR was originally
+> deferred (a different, more expensive source).
+
 This is a real gap, not a rounding error. **The product can tell you a shelf is
 uncrowded but never whether anyone on it is earning.** Few competitors + healthy
 royalties = opportunity. Few competitors + nobody earning = dead market. Keywords for authors
@@ -562,14 +671,20 @@ it's the pack a motivated affiliate pushes hardest.
    against real book ASINs where you know the right answer. Highest-leverage
    unknown in the product — **and settle it before the cache accrues** (see §5),
    since `filters` is part of the reverse-ASIN cache key.
+   **Update 2026-07-18:** two concrete inputs from live vetting (see §3.2) — (a) the
+   raw endpoint was **far cleaner than feared** on tested ASINs, so `rank_absolute`
+   may be doing less work than assumed; (b) a **`type == "amazon_serp"` organic-only
+   filter + `(asin, keyword)` dedupe** is almost certainly wanted regardless, to drop
+   sponsored placements. Decide whether `type` belongs in the cache-key `filters` or
+   is applied post-fetch (post-fetch keeps the cache reusable across placement views).
 2. **Real usage mix** — the entire cost model rests on loop-typical behaviour. If
    users turn out search-heavy, cost/credit nearly doubles. **Instrument
    cost-per-call by action type from day one** and you'll know your true blended
    rate within a week of launch.
 3. **`rating.value` precision** — integer per the schema. Verify against books.
-4. **Actual first-page size** for Books. BookBeam's format-distribution counts sum
-   to 15–33, implying ~16–48 slots. Confirm what the Merchant endpoint returns
-   before labelling any column "P1 Avg."
+4. ~~**Actual first-page size** for Books.~~ **RESOLVED 2026-07-18** (§3.3): the
+   Merchant endpoint returns **up to ~100 organic** + 6–36 sponsored, not 16–48.
+   Label it "top 100," not "P1."
 5. **Reverse-ASIN pricing friction at the loop's hinge** (see §4). 1 credit/ASIN is
    the right mental model but puts a 10-credit decision at the exact moment the
    loop should close. Default-select 3–5? Bundle the first post-deep-dive batch?

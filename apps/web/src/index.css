@@ -1,10 +1,33 @@
 @import "tailwindcss";
 
-/* "A workbench, not a rocket ship" — plain, competent, understated (brief §7). */
+/* "A workbench, not a rocket ship" - plain, competent, understated (brief §7).
+   Palette + fonts mirror the marketing landing page (landing/index.html) so the
+   in-app home matches it exactly. */
 @theme {
   --color-canvas: #fdfcfa;
+  --color-cream: #fdfcfa;
+  --color-warm: #f3ede3;
+  --color-ink: #2c2723;
+  --color-muted: #6f665c;
+  --color-clay: #b5654a;
+  --color-clay-dark: #9c5238;
+  --color-clay-light: #cd8468;
+  --color-clay-tint: #f4e9e1;
+
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Poppins", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--color-canvas);
+}
+
+/* Tighter tracking on the display face, matching the landing page. */
+.font-display {
+  letter-spacing: -0.02em;
 }

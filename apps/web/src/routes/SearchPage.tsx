@@ -1,69 +1,173 @@
+import type { KeywordRow } from "@kfa/shared";
 import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
 
 /**
- * Step 1 of the loop (brief §1): seed keyword -> related keywords + volumes.
- * Deliberately minimal — the marketing landing page lives elsewhere; this is
- * the in-app workbench. Deep dive / reverse ASIN pages follow the same pattern.
+ * Step 1 of the loop (brief §1): seed keyword → related keywords + volumes.
+ * Each row hands off to a deep dive (step 2). A `?seed=` param (set by the
+ * reverse-ASIN step) auto-runs the search so the loop closes without retyping.
  */
+
+type SortKey = "keyword" | "searchVolume" | "depth";
+type SortDir = 1 | -1; // 1 = ascending, -1 = descending
+
+// Direction a column jumps to when you first click it (before toggling).
+const DEFAULT_DIR: Record<SortKey, SortDir> = { keyword: 1, searchVolume: -1, depth: 1 };
+const DEFAULT_SORT = { key: "depth" as SortKey, dir: 1 as SortDir };
+
+const COLUMNS: { key: SortKey; label: string; title?: string }[] = [
+  { key: "keyword", label: "Keyword" },
+  { key: "searchVolume", label: "Volume" },
+  {
+    key: "depth",
+    label: "Relevance",
+    title: "How closely related to your seed. Fewer hops in Amazon's related-keyword graph means more relevant.",
+  },
+];
+
+function compareRows(a: KeywordRow, b: KeywordRow, key: SortKey, dir: SortDir): number {
+  const av = a[key];
+  const bv = b[key];
+  // Nulls always sort last, regardless of direction.
+  if (av == null && bv != null) return 1;
+  if (bv == null && av != null) return -1;
+  let base = 0;
+  if (av != null && bv != null) {
+    base = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
+  }
+  base *= dir;
+  if (base !== 0) return base;
+  // Tiebreak: higher volume first, then keyword A→Z - keeps same-depth rows useful.
+  const vol = (b.searchVolume ?? -1) - (a.searchVolume ?? -1);
+  return vol !== 0 ? vol : a.keyword.localeCompare(b.keyword);
+}
+
 export function SearchPage() {
-  const [seed, setSeed] = useState("");
+  const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [seed, setSeed] = useState(params.get("seed") ?? "");
+  const [sort, setSort] = useState(DEFAULT_SORT);
   const search = useMutation({ mutationFn: (kw: string) => api.search(kw) });
+
+  // Reset to the default sort (depth ascending) whenever a new result arrives.
+  useEffect(() => {
+    if (search.data) setSort(DEFAULT_SORT);
+  }, [search.data]);
+
+  const sortedKeywords = useMemo(() => {
+    if (!search.data) return [];
+    return [...search.data.keywords].sort((a, b) => compareRows(a, b, sort.key, sort.dir));
+  }, [search.data, sort]);
+
+  const toggleSort = (key: SortKey) =>
+    setSort((s) => (s.key === key ? { key, dir: (s.dir * -1) as SortDir } : { key, dir: DEFAULT_DIR[key] }));
+
+  // Auto-run when arriving with ?seed= (from Reverse ASIN → Search handoff).
+  useEffect(() => {
+    const incoming = params.get("seed");
+    if (incoming && incoming !== search.variables) {
+      setSeed(incoming);
+      search.mutate(incoming.toLowerCase());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
+
+  const run = (kw: string) => {
+    const v = kw.trim().toLowerCase();
+    if (!v) return;
+    setParams({ seed: v }, { replace: true });
+    search.mutate(v);
+  };
 
   return (
     <section>
-      <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
-      <p className="mt-1 text-slate-600">
-        Start with a seed keyword. Get the related searches Amazon shows buyers, each with
-        its US search volume.
+      <h1 className="font-display text-3xl font-bold tracking-tight text-ink">Keyword Search</h1>
+      <p className="mt-2 text-lg leading-relaxed text-muted">
+        Start with a seed keyword. Get the related searches Amazon shows book buyers, each with its
+        US search volume. Then deep-dive a promising one.
       </p>
 
       <form
-        className="mt-6 flex gap-2"
+        className="mt-6 flex flex-wrap gap-3"
         onSubmit={(e) => {
           e.preventDefault();
-          if (seed.trim()) search.mutate(seed.trim().toLowerCase());
+          run(seed);
         }}
       >
         <input
-          className="flex-1 rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-slate-500"
-          placeholder="stress management"
+          className="min-w-[220px] flex-1 rounded-lg border border-black/10 bg-white px-4 py-3 font-mono text-[15px] text-ink outline-none placeholder:text-muted/50 focus:border-clay"
+          placeholder="stress management workbook"
           value={seed}
           onChange={(e) => setSeed(e.target.value)}
         />
         <button
           type="submit"
           disabled={search.isPending}
-          className="rounded-md bg-slate-800 px-4 py-2 font-medium text-white disabled:opacity-50"
+          className="rounded-lg bg-clay px-6 py-3 font-semibold text-white shadow-sm transition-colors hover:bg-clay-dark disabled:opacity-50"
         >
-          {search.isPending ? "Searching…" : "Search · 1 credit"}
+          {search.isPending ? "Searching…" : "Search"}
         </button>
       </form>
+      <p className="mt-3 font-mono text-sm text-muted">
+        Tip: seed book-native language like “… workbook”, “… journal”, “… for kids”.
+      </p>
 
       {search.isError && (
-        <p className="mt-4 text-sm text-red-600">{search.error.message}</p>
+        <p className="mt-4 text-sm text-clay-dark">{(search.error as Error).message}</p>
       )}
 
       {search.data && (
-        <div className="mt-6 overflow-hidden rounded-md border border-slate-200 bg-white">
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2 text-xs text-slate-500">
-            <span>US · Books · {search.data.keywords.length} keywords</span>
-            <span>{search.data.cached ? "cached" : "fresh"}</span>
+        <div className="mt-8 overflow-hidden rounded-2xl border border-black/5 bg-white shadow-[0_8px_40px_-16px_rgba(44,39,35,0.15)]">
+          <div className="flex items-center justify-between gap-3 border-b border-black/5 px-4 py-3 font-mono text-xs text-muted">
+            <span>
+              US · Books · {search.data.keywords.length} keywords for “{search.data.seed}”
+            </span>
+            <span
+              className={
+                search.data.cached
+                  ? "rounded-full border border-clay/25 bg-clay-tint px-2 py-0.5 text-clay-dark"
+                  : "rounded-full border border-black/5 bg-warm px-2 py-0.5"
+              }
+            >
+              {search.data.cached ? "cached" : "fresh"}
+            </span>
           </div>
-          <table className="w-full text-sm">
-            <thead className="text-left text-slate-500">
-              <tr>
-                <th className="px-4 py-2 font-medium">Keyword</th>
-                <th className="px-4 py-2 font-medium">Volume</th>
+          <table className="w-full text-[15px]">
+            <thead>
+              <tr className="text-left font-mono text-[11px] uppercase tracking-widest text-muted/70">
+                {COLUMNS.map((col, i) => (
+                  <th
+                    key={col.key}
+                    title={col.title}
+                    onClick={() => toggleSort(col.key)}
+                    className={`cursor-pointer select-none px-4 py-2.5 font-medium transition-colors hover:text-ink ${
+                      i === 0 ? "" : "text-right"
+                    } ${sort.key === col.key ? "text-clay-dark" : ""}`}
+                  >
+                    {col.label}
+                    <span className="ml-1">{sort.key === col.key ? (sort.dir === 1 ? "▲" : "▼") : ""}</span>
+                  </th>
+                ))}
+                <th className="px-4 py-2.5" />
               </tr>
             </thead>
             <tbody>
-              {search.data.keywords.map((k) => (
-                <tr key={k.keyword} className="border-t border-slate-100">
-                  <td className="px-4 py-2">{k.keyword}</td>
-                  <td className="px-4 py-2 tabular-nums">
-                    {k.searchVolume?.toLocaleString() ?? "—"}
+              {sortedKeywords.map((k) => (
+                <tr key={k.keyword} className="group border-t border-black/5 hover:bg-warm/40">
+                  <td className="px-4 py-3 text-ink">{k.keyword}</td>
+                  <td className="px-4 py-3 text-right font-mono text-muted">
+                    {k.searchVolume?.toLocaleString() ?? "-"}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-muted">{k.depth ?? "-"}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => navigate(`/deep-dive?keyword=${encodeURIComponent(k.keyword)}`)}
+                      className="whitespace-nowrap rounded-full border border-clay/25 bg-clay-tint px-3 py-1 font-mono text-xs text-clay-dark transition-colors hover:bg-clay hover:text-white"
+                    >
+                      Deep dive →
+                    </button>
                   </td>
                 </tr>
               ))}

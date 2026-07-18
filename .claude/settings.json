@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm install)",
+      "Bash(npm ci)",
+      "Bash(npm run typecheck)",
+      "Bash(npm run build)",
+      "Bash(npm run build:*)",
+      "Bash(npm run dev:web)",
+      "Bash(npm run dev:api)",
+      "Bash(npm run datavet)",
+      "Bash(npm run db:generate)",
+      "Bash(npm run lint)",
+      "Bash(npm run typecheck --*)",
+      "Bash(npm run build --*)",
+      "Bash(npx tsc*)",
+      "Bash(npx wrangler *)",
+      "Bash(wrangler *)",
+      "Bash(npx vite*)",
+      "Bash(vite*)",
+      "Bash(node *)",
+      "Bash(curl -s http://localhost:*)",
+      "Bash(curl -sS http://localhost:*)",
+      "Bash(curl -s http://127.0.0.1:*)",
+      "Bash(curl -sS http://127.0.0.1:*)",
+      "Bash(curl http://localhost:*)",
+      "Bash(curl http://127.0.0.1:*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(lsof -i*)",
+      "Bash(kill *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git push*)"
+    ]
+  }
+}

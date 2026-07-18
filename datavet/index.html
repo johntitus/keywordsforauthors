@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Data vet · Keywords for Authors</title>
+    <style>
+      :root {
+        --ink: #2c2723;
+        --muted: #6f665c;
+        --clay: #b5654a;
+        --line: #e7e2da;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: #fdfcfa;
+        color: var(--ink);
+        font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .wrap { max-width: 900px; margin: 0 auto; padding: 32px 20px 80px; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      .sub { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
+      code { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+      .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+      .tab {
+        padding: 9px 16px; font-size: 14px; font-weight: 600; color: var(--muted);
+        background: none; border: 0; border-bottom: 2px solid transparent; cursor: pointer;
+      }
+      .tab.active { color: var(--clay); border-bottom-color: var(--clay); }
+
+      .subtabs { display: flex; gap: 6px; margin: 8px 0 4px; }
+      .subtab {
+        padding: 6px 13px; font-size: 13px; font-weight: 600; color: var(--muted);
+        background: #f3efe9; border: 1px solid var(--line); border-radius: 7px; cursor: pointer;
+      }
+      .subtab.active { color: #fff; background: var(--clay); border-color: var(--clay); }
+      .avail { font-size: 12px; color: var(--muted); margin: 12px 0 2px; }
+      .avail b { color: var(--ink); }
+      .cover { height: 69px; width: auto; border-radius: 3px; display: block; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+      .spin {
+        display: inline-block; width: 12px; height: 12px; vertical-align: middle;
+        border: 2px solid var(--line); border-top-color: var(--clay); border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      form { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+      input, textarea {
+        padding: 10px 12px; font-size: 15px;
+        border: 1px solid #cfc8bd; border-radius: 8px; outline: none;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      }
+      input:focus, textarea:focus { border-color: var(--clay); }
+      textarea { width: 100%; min-height: 76px; resize: vertical; }
+      .grow { flex: 1; min-width: 220px; }
+      button.go {
+        padding: 10px 18px; font-size: 15px; font-weight: 600; color: #fff;
+        background: var(--clay); border: 0; border-radius: 8px; cursor: pointer;
+      }
+      button.go:disabled { opacity: 0.55; cursor: default; }
+      .controls { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; margin: 4px 0 6px; }
+      .field { display: flex; flex-direction: column; gap: 3px; }
+      .field label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+      .field input { width: 110px; }
+      .hint { color: var(--muted); font-size: 12px; margin: 0 0 22px; }
+      .hint.warn { color: #8a4b1f; }
+
+      .status { margin: 16px 0; font-size: 14px; }
+      .status.error { color: #b3402f; }
+      .summary {
+        display: flex; flex-wrap: wrap; gap: 18px; margin: 20px 0 6px;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; color: var(--muted);
+      }
+      .summary b { color: var(--ink); font-weight: 600; }
+      .asinhead {
+        margin: 22px 0 6px; font-family: ui-monospace, monospace; font-size: 13px; color: var(--muted);
+      }
+      .asinhead b { color: var(--ink); }
+      table { width: 100%; border-collapse: collapse; background: #fff;
+        border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+      th, td { text-align: left; padding: 9px 14px; border-top: 1px solid var(--line); }
+      th {
+        font: 500 11px/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.08em;
+        color: var(--muted); border-top: 0; cursor: pointer; user-select: none;
+      }
+      th.num, td.num { text-align: right; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+      tbody tr:hover { background: #faf7f2; }
+      .kw { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+      details { margin-top: 26px; }
+      summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+      pre {
+        background: #1e1b18; color: #e7ded2; padding: 16px; border-radius: 8px;
+        overflow: auto; font-size: 12px; max-height: 460px; margin-top: 10px;
+      }
+      .panel { display: none; }
+      .panel.active { display: block; }
+      .metrics { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 4px; }
+      .metric {
+        border: 1px solid var(--line); background: #fff; border-radius: 10px;
+        padding: 10px 14px; min-width: 120px;
+      }
+      .metric .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+      .metric .val { font-size: 20px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+      .metric .val small { font-size: 12px; font-weight: 400; color: var(--muted); }
+      .metric.flag .val { color: #8a4b1f; }
+      .fmts { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+      .badge { font-size: 11px; padding: 1px 6px; border-radius: 5px; margin-right: 4px; }
+      .badge.best { background: #fbecdc; color: #8a4b1f; }
+      .badge.choice { background: #e2eef4; color: #2b6079; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Data vet</h1>
+      <p class="sub">Live DataForSEO + RapidAPI — Amazon US · Books. Real API calls cost real money.</p>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="search">Related keywords</button>
+        <button class="tab" data-tab="deep">Deep dive</button>
+        <button class="tab" data-tab="reverse">Reverse ASIN</button>
+      </div>
+
+      <!-- ============ RELATED KEYWORDS ============ -->
+      <div class="panel active" id="panel-search">
+        <p class="sub">
+          <code>related_keywords</code> · depth 3 · limit 258 · ignore_synonyms. Each call ~$0.02–0.04.
+        </p>
+        <form id="searchForm">
+          <input id="kw" class="grow" placeholder="stress management workbook" autocomplete="off" autofocus />
+          <button class="go" id="searchGo" type="submit">Search</button>
+        </form>
+        <p class="hint">Tip: seed book-native language ("… workbook", "… journal", "… for kids").</p>
+
+        <div id="searchStatus" class="status"></div>
+        <div id="searchSummary" class="summary" hidden></div>
+        <div id="searchTable"></div>
+        <details id="searchRawWrap" hidden>
+          <summary>Raw API response</summary>
+          <pre id="searchRaw"></pre>
+        </details>
+      </div>
+
+      <!-- ============ DEEP DIVE ============ -->
+      <div class="panel" id="panel-deep">
+        <p class="sub">
+          <code>real-time-amazon-data</code> — the competitors on Amazon Books for a keyword, each with
+          its <b>BSR</b>, publisher and page count. Search = 1 call; every result bills 1 more for BSR.
+          In the app this would cost <b>~5 credits</b> (it's our most expensive action).
+        </p>
+        <form id="deepForm">
+          <input id="deepKw" class="grow" placeholder="gratitude journal" autocomplete="off" />
+          <div class="field">
+            <label for="deepFormat">Format</label>
+            <select id="deepFormat" style="padding:10px 12px;font-size:15px;border:1px solid #cfc8bd;border-radius:8px;">
+              <option value="all">All</option>
+              <option value="paperback">Paperback</option>
+              <option value="ebook">eBook</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="deepEnrich">Results (all get BSR)</label>
+            <input id="deepEnrich" type="number" value="20" min="1" max="48" step="1" />
+          </div>
+          <button class="go" id="deepGo" type="submit">Deep dive</button>
+        </form>
+        <p class="hint">
+          Every row shown gets full BSR data. <b>SERP purity</b> = share ranking in a book category
+          (Books/Kindle) vs. non-book (Office Products, etc.) — the journal-vs-book tell. Recurring
+          ASINs are cached, so repeat dives cost far less than the first.
+        </p>
+
+        <div id="deepStatus" class="status"></div>
+        <div id="deepSummary" class="summary" hidden></div>
+        <div id="deepMetrics" class="metrics"></div>
+        <div id="deepActions" style="margin:14px 0" hidden>
+          <button type="button" class="go" id="toReverse" style="background:#3d7a52">
+            Send ASINs → Reverse ASIN
+          </button>
+        </div>
+        <div id="deepTable"></div>
+        <details id="deepRawWrap" hidden>
+          <summary>Raw API response (search)</summary>
+          <pre id="deepRaw"></pre>
+        </details>
+      </div>
+
+      <!-- ============ REVERSE ASIN ============ -->
+      <div class="panel" id="panel-reverse">
+        <p class="sub">
+          <code>ranked_keywords</code> — the keywords a book actually ranks for. One credit per ASIN.
+          Each ASIN ~$0.013–0.024.
+        </p>
+        <form id="reverseForm">
+          <textarea id="asins" placeholder="One ASIN per line, e.g.&#10;B00R92CL5E&#10;B0ABCD1234"></textarea>
+          <div class="controls">
+            <div class="field">
+              <label for="maxRank">Max rank (&lt;)</label>
+              <input id="maxRank" type="number" value="20" min="0" />
+            </div>
+            <div class="field">
+              <label for="minVolume">Min volume (&gt;)</label>
+              <input id="minVolume" type="number" value="50" min="0" />
+            </div>
+            <div class="field">
+              <label for="placement">Placement</label>
+              <select id="placement" style="padding:10px 12px;font-size:15px;border:1px solid #cfc8bd;border-radius:8px;">
+                <option value="all">All</option>
+                <option value="organic">Organic only</option>
+                <option value="sponsored">Sponsored only</option>
+              </select>
+            </div>
+            <button class="go" id="reverseGo" type="submit">Reverse ASIN</button>
+          </div>
+        </form>
+        <p class="hint warn">
+          Set either filter to <b>0</b> to switch it off. Unfiltered, this endpoint is dangerous —
+          it counts anything that ranks anywhere (a WiFi extender "ranks" for "baby girl"). Try 0/0
+          vs 20/50 on the same ASIN to see the §10.1 threshold in action.
+        </p>
+
+        <div id="reverseStatus" class="status"></div>
+        <div id="reverseSummary" class="summary" hidden></div>
+        <div id="reverseResults"></div>
+        <details id="reverseRawWrap" hidden>
+          <summary>Raw API response</summary>
+          <pre id="reverseRaw"></pre>
+        </details>
+      </div>
+    </div>
+
+    <script>
+      // ---------- tabs ----------
+      document.querySelectorAll(".tab").forEach((t) => {
+        t.addEventListener("click", () => {
+          document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
+          document.querySelectorAll(".panel").forEach((x) => x.classList.remove("active"));
+          t.classList.add("active");
+          document.getElementById("panel-" + t.dataset.tab).classList.add("active");
+        });
+      });
+
+      const esc = (s) =>
+        String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+      // Generic sortable table. cols = [{key,label,num,fmt}]
+      function sortableTable(mountEl, rows, cols, state) {
+        function render() {
+          const sorted = [...rows].sort((a, b) => {
+            const av = a[state.key], bv = b[state.key];
+            if (av == null) return 1;
+            if (bv == null) return -1;
+            if (typeof av === "number") return (av - bv) * state.dir;
+            return String(av).localeCompare(String(bv)) * state.dir;
+          });
+          const head =
+            "<tr>" +
+            cols
+              .map((c) => {
+                const arrow = c.key === state.key ? (state.dir === 1 ? " ▲" : " ▼") : "";
+                return `<th data-key="${c.key}" class="${c.num ? "num" : ""}">${c.label}${arrow}</th>`;
+              })
+              .join("") +
+            "</tr>";
+          const body = sorted
+            .map((r) => {
+              const rk = state.rowKey ? ` data-row="${esc(r[state.rowKey])}"` : "";
+              return (
+                `<tr${rk}>` +
+                cols
+                  .map((c) => {
+                    const v = r[c.key];
+                    const text = c.fmt ? c.fmt(v, r) : v == null ? "—" : esc(v);
+                    return `<td data-col="${c.key}" class="${c.num ? "num" : "kw"}">${text}</td>`;
+                  })
+                  .join("") +
+                "</tr>"
+              );
+            })
+            .join("");
+          mountEl.innerHTML = `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
+          mountEl.querySelectorAll("th").forEach((el) =>
+            el.addEventListener("click", () => {
+              const k = el.dataset.key;
+              const col = cols.find((c) => c.key === k);
+              if (k === state.key) state.dir *= -1;
+              else { state.key = k; state.dir = col.num ? -1 : 1; }
+              render();
+            }),
+          );
+        }
+        render();
+      }
+      // Patch a single cell in place (used to fill BSR/author/etc. progressively
+      // without re-rendering the whole table — no flicker, no row jumping).
+      function patchCell(mountEl, rowVal, colKey, html) {
+        const td = mountEl.querySelector(`tbody tr[data-row="${rowVal}"] td[data-col="${colKey}"]`);
+        if (td) td.innerHTML = html;
+      }
+      const num = (v) => (v == null ? "—" : Number(v).toLocaleString());
+
+      // ---------- Related keywords ----------
+      document.getElementById("searchForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const keyword = document.getElementById("kw").value.trim();
+        if (!keyword) return;
+        const go = document.getElementById("searchGo");
+        const statusEl = document.getElementById("searchStatus");
+        const summaryEl = document.getElementById("searchSummary");
+        const tableEl = document.getElementById("searchTable");
+        const rawWrap = document.getElementById("searchRawWrap");
+        go.disabled = true;
+        statusEl.className = "status";
+        statusEl.textContent = "Searching… (live API, a few seconds)";
+        summaryEl.hidden = true; tableEl.innerHTML = ""; rawWrap.hidden = true;
+        const t0 = performance.now();
+        try {
+          const res = await fetch("/api/search?keyword=" + encodeURIComponent(keyword));
+          const data = await res.json();
+          if (!res.ok || data.error) throw new Error(data.error || "Request failed");
+          const secs = ((performance.now() - t0) / 1000).toFixed(1);
+          statusEl.textContent = "";
+          summaryEl.hidden = false;
+          summaryEl.innerHTML =
+            `seed <b>${esc(data.seed)}</b>keywords <b>${data.count}</b>` +
+            `cost <b>$${Number(data.costUsd).toFixed(4)}</b>time <b>${secs}s</b>` +
+            `status <b>${esc(String(data.taskStatusMessage || data.statusMessage || ""))}</b>`;
+          sortableTable(
+            tableEl, data.keywords,
+            [
+              { key: "keyword", label: "Keyword" },
+              { key: "searchVolume", label: "Volume", num: true, fmt: num },
+              { key: "depth", label: "Depth", num: true, fmt: (v) => v ?? "—" },
+              { key: "lastUpdatedTime", label: "Last updated", fmt: (v) => esc((v ?? "").split(" ")[0] || "—") },
+            ],
+            { key: "searchVolume", dir: -1 },
+          );
+          document.getElementById("searchRaw").textContent = JSON.stringify(data.raw, null, 2);
+          rawWrap.hidden = false;
+        } catch (err) {
+          statusEl.className = "status error";
+          statusEl.textContent = "Error: " + err.message;
+        } finally { go.disabled = false; }
+      });
+
+      // ---------- Reverse ASIN ----------
+      let lastReverse = null; // stored so the placement filter re-renders without refetching
+
+      const typeFmt = (v) =>
+        v === "sponsored"
+          ? '<span style="color:#8a4b1f">sponsored</span>'
+          : v === "organic"
+            ? '<span style="color:#3d7a52">organic</span>'
+            : esc(v ?? "—");
+
+      function renderReverse() {
+        if (!lastReverse) return;
+        const { data, secs } = lastReverse;
+        const place = document.getElementById("placement").value;
+        const keep = (kws) => (place === "all" ? kws : kws.filter((k) => k.type === place));
+        const summaryEl = document.getElementById("reverseSummary");
+        const resultsEl = document.getElementById("reverseResults");
+        const totalKw = data.results.reduce((n, r) => n + keep(r.keywords).length, 0);
+
+        summaryEl.hidden = false;
+        summaryEl.innerHTML =
+          `ASINs <b>${data.results.length}</b>keywords <b>${totalKw}</b>` +
+          `placement <b>${place}</b>` +
+          `filter <b>rank&lt;${data.filter.maxRank || "off"} · vol&gt;${data.filter.minVolume || "off"}</b>` +
+          `cost <b>$${Number(data.costUsd).toFixed(4)}</b>time <b>${secs}s</b>`;
+
+        resultsEl.innerHTML = "";
+        data.results.forEach((r) => {
+          const kws = keep(r.keywords);
+          const nOrg = r.keywords.filter((k) => k.type === "organic").length;
+          const nSpon = r.keywords.filter((k) => k.type === "sponsored").length;
+          const head = document.createElement("div");
+          head.className = "asinhead";
+          head.innerHTML =
+            `<b>${esc(r.asin || "?")}</b> — showing <b>${kws.length}</b> ` +
+            `(fetched ${r.returned}: ${nOrg} organic, ${nSpon} sponsored` +
+            (r.totalCount != null ? ` · ${num(r.totalCount)} total pre-limit` : "") + `)` +
+            (r.statusMessage && r.statusMessage !== "Ok." ? ` · <span style="color:#b3402f">${esc(r.statusMessage)}</span>` : "");
+          resultsEl.appendChild(head);
+          const mount = document.createElement("div");
+          resultsEl.appendChild(mount);
+          if (kws.length) {
+            sortableTable(
+              mount, kws,
+              [
+                { key: "keyword", label: "Keyword" },
+                { key: "searchVolume", label: "Volume", num: true, fmt: num },
+                { key: "rankAbsolute", label: "Rank", num: true, fmt: (v) => v ?? "—" },
+                { key: "type", label: "Type", fmt: typeFmt },
+              ],
+              { key: "searchVolume", dir: -1 },
+            );
+          } else {
+            mount.innerHTML = '<p class="sub">No keywords for this ASIN under the current filter.</p>';
+          }
+        });
+        document.getElementById("reverseRaw").textContent = JSON.stringify(data.raw, null, 2);
+        document.getElementById("reverseRawWrap").hidden = false;
+      }
+
+      document.getElementById("placement").addEventListener("change", renderReverse);
+
+      document.getElementById("reverseForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const asins = document.getElementById("asins").value.trim();
+        if (!asins) return;
+        const maxRank = document.getElementById("maxRank").value || 0;
+        const minVolume = document.getElementById("minVolume").value || 0;
+        const go = document.getElementById("reverseGo");
+        const statusEl = document.getElementById("reverseStatus");
+        go.disabled = true;
+        statusEl.className = "status";
+        statusEl.textContent = "Fetching ranked keywords… (live API)";
+        document.getElementById("reverseSummary").hidden = true;
+        document.getElementById("reverseResults").innerHTML = "";
+        document.getElementById("reverseRawWrap").hidden = true;
+        const t0 = performance.now();
+        try {
+          const qs = new URLSearchParams({ asins, maxRank, minVolume });
+          const res = await fetch("/api/reverse-asin?" + qs.toString());
+          const data = await res.json();
+          if (!res.ok || data.error) throw new Error(data.error || "Request failed");
+          statusEl.textContent = "";
+          lastReverse = { data, secs: ((performance.now() - t0) / 1000).toFixed(1) };
+          renderReverse();
+        } catch (err) {
+          statusEl.className = "status error";
+          statusEl.textContent = "Error: " + err.message;
+        } finally { go.disabled = false; }
+      });
+
+      // ---------- Deep dive (RapidAPI, two-phase: search → BSR) ----------
+      let lastDeepData = null;
+
+      const metricCard = (label, val, sub, flag) =>
+        `<div class="metric${flag ? " flag" : ""}"><div class="label">${esc(label)}</div>` +
+        `<div class="val">${val} <small>${esc(sub || "")}</small></div></div>`;
+
+      function titleCell(title, row) {
+        let s = esc(title);
+        if (row.isBestSeller) s += ' <span class="badge best">Best Seller</span>';
+        if (row.isAmazonChoice) s += ' <span class="badge choice">Choice</span>';
+        return s;
+      }
+
+      const spin = '<span class="spin"></span>';
+      const isBookStore = (s) => /books|kindle/i.test(s || "");
+      const coverFmt = (v) => (v ? `<img class="cover" src="${esc(v)}" alt="" loading="lazy">` : "—");
+
+      // BSR/Publisher/Pages show a spinner while phase-2 enrichment is pending.
+      const bsrFmt = (v, row) => {
+        if (row.pending) return spin;
+        if (v != null) return "#" + num(v);
+        if (row.bsrStore)
+          return '<span style="color:#8a4b1f" title="not a Books rank — not comparable">' +
+            esc(row.bsrStore.replace(/^(Free )?in /i, "")) + "</span>";
+        return "—";
+      };
+      const pubFmt = (v, row) => (row.pending ? spin : esc(v || "—"));
+      const pagesFmt = (v, row) => (row.pending ? spin : (v ?? "—"));
+      const authorFmt = (v, row) => (row.pending ? spin : esc(v || "—"));
+
+      const DEEP_COLS = [
+        { key: "imageUrl", label: "", fmt: coverFmt },
+        { key: "title", label: "Title", fmt: titleCell },
+        { key: "author", label: "Author", fmt: authorFmt },
+        { key: "asin", label: "ASIN" },
+        { key: "format", label: "Format", fmt: (v) => esc(v || "—") },
+        { key: "priceFrom", label: "Price", num: true, fmt: (v) => (v == null ? "—" : "$" + Number(v).toFixed(2)) },
+        { key: "ratingValue", label: "Rating", num: true, fmt: (v) => (v == null ? "—" : Number(v).toFixed(1)) },
+        { key: "ratingVotes", label: "Reviews", num: true, fmt: num },
+        { key: "bsrInBooks", label: "BSR (Books)", num: true, fmt: bsrFmt },
+        { key: "publisher", label: "Publisher", fmt: pubFmt },
+        { key: "pages", label: "Pages", num: true, fmt: pagesFmt },
+      ];
+
+      // Enrichment tuning (measured): batches of 3 fired all-concurrently give the
+      // best mix of first-paint (~4.5s) and total (~10s) for a 20-row dive.
+      const DEEP_CHUNK = 3;
+      const DEEP_CONCURRENCY = 8;
+      const ENRICH_COLS = ["author", "bsrInBooks", "publisher", "pages"];
+
+      function renderDeepTable(items) {
+        const tableEl = document.getElementById("deepTable");
+        if (!items.length) {
+          tableEl.innerHTML = '<p class="sub">No results for this keyword / format.</p>';
+          return;
+        }
+        // Default sort = relevance order (stable) so rows don't jump while BSR fills.
+        sortableTable(tableEl, items, DEEP_COLS, { key: "order", dir: 1, rowKey: "asin" });
+      }
+
+      // Fill one row's enrichment cells in place from its (now-populated) item.
+      function fillRow(item) {
+        const tableEl = document.getElementById("deepTable");
+        for (const key of ENRICH_COLS) {
+          const col = DEEP_COLS.find((c) => c.key === key);
+          patchCell(tableEl, item.asin, key, col.fmt(item[key], item));
+        }
+      }
+
+      const chunk = (arr, n) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
+
+      // Run tasks with a concurrency cap; each resolves independently.
+      async function runPool(tasks, concurrency) {
+        let idx = 0;
+        const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
+          while (idx < tasks.length) await tasks[idx++]();
+        });
+        await Promise.all(workers);
+      }
+
+      function renderMetrics(items, sdata) {
+        const withStore = items.filter((i) => i.bsrStore);
+        const books = withStore.filter((i) => isBookStore(i.bsrStore));
+        const purity = withStore.length ? books.length / withStore.length : null;
+        const lowContent = withStore.length - books.length;
+        const prices = items.map((i) => i.priceFrom).filter((v) => v != null);
+        const votes = items.map((i) => i.ratingVotes).filter((v) => v != null);
+        const avgPrice = prices.length ? prices.reduce((a, b) => a + b, 0) / prices.length : null;
+        const avgVotes = votes.length ? Math.round(votes.reduce((a, b) => a + b, 0) / votes.length) : null;
+        const indie = items.filter((i) => (i.publisher || "").toLowerCase().startsWith("independently")).length;
+
+        const fmtCounts = {};
+        for (const i of items) if (i.format) fmtCounts[i.format] = (fmtCounts[i.format] || 0) + 1;
+        const fmtStr =
+          Object.entries(fmtCounts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${v}`).join(" · ") || "—";
+
+        const metricsEl = document.getElementById("deepMetrics");
+        metricsEl.innerHTML =
+          metricCard("Indexed results", num(sdata.totalResults), "Amazon Books (RapidAPI)") +
+          metricCard("SERP purity", purity == null ? "—" : Math.round(purity * 100) + "%",
+                     `${books.length}/${withStore.length} in Books/Kindle`, purity != null && purity < 0.6) +
+          metricCard("Low-content?", lowContent, "rank in Office Products etc.", lowContent > 0) +
+          metricCard("Avg price", avgPrice == null ? "—" : "$" + avgPrice.toFixed(2), "shown") +
+          metricCard("Avg reviews", avgVotes == null ? "—" : num(avgVotes), "shown") +
+          metricCard("Indie", indie, "Independently pub.", false);
+        metricsEl.insertAdjacentHTML("beforeend",
+          `<div class="fmts" style="flex-basis:100%">formats: ${fmtStr}</div>`);
+      }
+
+      const setSummary = (html) => {
+        const el = document.getElementById("deepSummary");
+        el.hidden = false;
+        el.innerHTML = html;
+      };
+
+      document.getElementById("toReverse").addEventListener("click", () => {
+        if (!lastDeepData) return;
+        const asins = [...new Set(lastDeepData.items.filter((i) => i.asin).map((i) => i.asin))].slice(0, 10);
+        document.getElementById("asins").value = asins.join("\n");
+        document.querySelector('.tab[data-tab="reverse"]').click();
+      });
+
+      document.getElementById("deepForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const keyword = document.getElementById("deepKw").value.trim();
+        if (!keyword) return;
+        const format = document.getElementById("deepFormat").value;
+        const limit = document.getElementById("deepEnrich").value || 20;
+        const go = document.getElementById("deepGo");
+        const statusEl = document.getElementById("deepStatus");
+        go.disabled = true;
+        statusEl.className = "status";
+        statusEl.textContent = "Searching…";
+        document.getElementById("deepSummary").hidden = true;
+        document.getElementById("deepMetrics").innerHTML = "";
+        document.getElementById("deepTable").innerHTML = "";
+        document.getElementById("deepActions").hidden = true;
+        document.getElementById("deepRawWrap").hidden = true;
+        const t0 = performance.now();
+        try {
+          // Phase 1 — search: render the table fast, BSR columns spinning.
+          const sres = await fetch("/api/rapid-search?" + new URLSearchParams({ keyword, format, limit }));
+          const sdata = await sres.json();
+          if (!sres.ok || sdata.error) throw new Error(sdata.error || "Request failed");
+          const items = sdata.items.map((i, idx) => ({ ...i, order: idx, pending: true }));
+          lastDeepData = { ...sdata, items };
+          renderDeepTable(items);
+          document.getElementById("deepActions").hidden = items.length === 0;
+          document.getElementById("deepRaw").textContent = JSON.stringify(sdata.raw, null, 2);
+          document.getElementById("deepRawWrap").hidden = false;
+          statusEl.textContent = "";
+          setSummary(
+            `keyword <b>${esc(sdata.keyword)}</b>` +
+            `format <b>${esc(sdata.format)}</b>` +
+            `results <b>${sdata.returned}</b>` +
+            `indexed <b>${num(sdata.totalResults)}</b>` +
+            `${spin} fetching BSR…`,
+          );
+
+          // Phase 2 — BSR: fetch in small concurrent chunks; fill each row's cells
+          // the moment its chunk returns (no full re-render → no flicker or jumps).
+          const byAsin = new Map(items.map((i) => [i.asin, i]));
+          const chunks = chunk(items.map((i) => i.asin).filter(Boolean), DEEP_CHUNK);
+          const agg = { cacheHits: 0, asinsCharged: 0, remaining: null, limit: null, done: 0 };
+          const total = items.length;
+
+          const showProgress = () =>
+            setSummary(
+              `keyword <b>${esc(sdata.keyword)}</b>` +
+              `format <b>${esc(sdata.format)}</b>` +
+              `results <b>${sdata.returned}</b>` +
+              `${spin} BSR <b>${agg.done}/${total}</b>`,
+            );
+          showProgress();
+
+          if (chunks.length) {
+            const tasks = chunks.map((c) => async () => {
+              try {
+                const r = await fetch("/api/rapid-bsr?" + new URLSearchParams({ asins: c.join(",") }));
+                const b = await r.json();
+                if (!r.ok || b.error) throw new Error(b.error || "BSR fetch failed");
+                agg.cacheHits += b.cacheHits || 0;
+                agg.asinsCharged += b.asinsCharged || 0;
+                if (b.quotaLimit != null) agg.limit = b.quotaLimit;
+                if (b.quotaRemaining != null) agg.remaining = agg.remaining == null ? b.quotaRemaining : Math.min(agg.remaining, b.quotaRemaining);
+                for (const asin of c) {
+                  const it = byAsin.get(asin);
+                  if (!it) continue;
+                  if (b.byAsin[asin]) Object.assign(it, b.byAsin[asin]);
+                  it.pending = false;
+                  agg.done++;
+                  fillRow(it);
+                }
+              } catch (err) {
+                for (const asin of c) {
+                  const it = byAsin.get(asin);
+                  if (it) { it.pending = false; agg.done++; fillRow(it); }
+                }
+              }
+              showProgress();
+              renderMetrics(items, sdata); // metrics tighten as rows fill in
+            });
+            await runPool(tasks, DEEP_CONCURRENCY);
+
+            const quotaMeter =
+              agg.remaining != null && agg.limit != null
+                ? `quota left <b>${num(agg.remaining)}/${num(agg.limit)}</b>`
+                : "";
+            setSummary(
+              `keyword <b>${esc(sdata.keyword)}</b>` +
+              `format <b>${esc(sdata.format)}</b>` +
+              `results <b>${sdata.returned}</b>` +
+              `cache hits <b>${agg.cacheHits}</b>` +
+              `ASINs billed <b>${agg.asinsCharged}</b>` +
+              `spent this dive <b>${sdata.searchCharged + agg.asinsCharged}</b>` +
+              quotaMeter +
+              `time <b>${((performance.now() - t0) / 1000).toFixed(1)}s</b>`,
+            );
+          }
+        } catch (err) {
+          statusEl.className = "status error";
+          statusEl.textContent = "Error: " + err.message;
+        } finally {
+          go.disabled = false;
+        }
+      });
+
+    </script>
+  </body>
+</html>

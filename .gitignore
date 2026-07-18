@@ -20,6 +20,9 @@ drizzle/
 .env.*
 !.env.example
 
+# MCP config — holds the RapidAPI key inline, keep it out of git
+.mcp.json
+
 # Editor / OS
 .DS_Store
 .vscode/
