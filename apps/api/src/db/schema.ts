@@ -53,7 +53,27 @@ export const keywordSnapshots = sqliteTable(
   (t) => [index("snapshot_keyword_idx").on(t.keyword, t.locationCode)],
 );
 
+// Autosuggest dictionary: one deduped row per keyword we've ever observed (seed
+// searches + related + reverse-ASIN results), with its best-known volume. Powers
+// the typeahead via a prefix lookup. Distinct from keyword_snapshots, which is
+// the append-only trend history; this is a lookup index and is upserted freely
+// (cache hits included) since it carries no time dimension.
+export const keywords = sqliteTable(
+  "keywords",
+  {
+    keyword: text("keyword").primaryKey(),
+    searchVolume: integer("search_volume"),
+    source: text("source"), // 'seed' | 'related' | 'reverse-asin'
+    seenCount: integer("seen_count").notNull().default(1),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (t) => [index("keyword_prefix_idx").on(t.keyword)],
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type CreditTransaction = typeof creditTransactions.$inferSelect;
 export type KeywordSnapshot = typeof keywordSnapshots.$inferSelect;
+export type KeywordEntry = typeof keywords.$inferSelect;

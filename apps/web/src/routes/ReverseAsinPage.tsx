@@ -14,8 +14,9 @@ import { api } from "../lib/api.js";
 
 const ASIN_RE = /^[0-9A-Z]{10}$/;
 const norm = (t: string) => t.trim().toUpperCase();
+// Capped at 10: reverse-ASIN bills one credit per ASIN, so keep a run bounded.
 const tokenize = (raw: string) =>
-  [...new Set(raw.split(/[\s,]+/).map(norm).filter(Boolean))].slice(0, 30);
+  [...new Set(raw.split(/[\s,]+/).map(norm).filter(Boolean))].slice(0, 10);
 
 // --- One combined table, aggregated by keyword across all reversed ASINs ---
 type RevSortKey = "keyword" | "searchVolume" | "avgRank" | "competitors";
@@ -163,7 +164,7 @@ export function ReverseAsinPage() {
     setChips((prev) => {
       const next = [...prev];
       for (const tok of raw.split(/[\s,]+/).map(norm).filter(Boolean)) {
-        if (!next.includes(tok) && next.length < 30) next.push(tok);
+        if (!next.includes(tok) && next.length < 10) next.push(tok);
       }
       return next;
     });

@@ -17,7 +17,9 @@ returns **BSR** (+ author, publisher, page count), which DataForSEO can't. **Dat
 powers SEARCH and REVERSE ASIN** (unchanged). ProjectBrief §2/§3.3/§4/§6 carry the formal
 callouts; memory `bsr-via-rapidapi-hybrid` has the load-bearing details. Settled shape:
 
-- Search (1 quota call) → cap **top 20** competitors (title, ASIN, cover, price, rating).
+- Search (1 quota call for paperback/all) → cap **top 20** competitors (title, ASIN, cover, price,
+  rating). **ebook/audiobook now search the Kindle/Audible department + paginate (~2 calls)** — see
+  the 2026-07-19 session log above.
 - BSR enrichment: `product-details` per ASIN. **Billed per ASIN *returned*** (batching doesn't
   save; drops are free); search = 1. **Enrich ALL 20** so no half-empty column.
 - **RapidAPI rate-limits bursts (~10 concurrent → 429).** Enrich in **batches of 3, fired
@@ -40,6 +42,58 @@ blocklist, and shows the seed's competitor (indexed-results) count. See memory
 `zero-volume-trust-problem` for the load-bearing details and `TODO.md` for deferred follow-ups
 (per-keyword indexed counts, search Filters/Options panel, junk-keyword filtering).
 
+## Session log — 2026-07-19 (workbench polish + keyword autosuggest)
+
+Shipped on top of the "real tool status" above. All typecheck + build clean; verified against a
+live local Worker.
+
+**Search & Competitors UI:**
+- SEARCH: dropped the confusing **"Books"** competitor-overlap column; the per-row action button
+  is renamed **"Deep dive" → "Competitors"** (still routes to `/deep-dive`).
+- COMPETITORS (deep dive): the table now **sorts only after BSR enrichment finishes** — rows fill
+  in original relevance order during enrichment so they don't jump around, then sort once.
+- **Per-format BSR.** Under a single format the BSR column shows that store's own rank — header
+  reads **BSR (Books / Kindle / Audible)** — sourced from a new `bsrRank` (first "#N in <store>").
+  Under **all formats** only the cross-comparable **"in Books"** rank (`bsrInBooks`) shows a number;
+  ebook/audiobook rows get a clean **eBook / Audiobook** label instead of a raw store/category
+  string. Paperback/hardcover rows KEEP their raw `bsrStore` so the "in Office Products = blank
+  journal" SERP-purity signal survives.
+- New **Audiobook** format option (schema enum + UI). Default stays **All formats**.
+
+**Deep-dive data fixes (RapidAPI):**
+- **ebook/audiobook search the Kindle/Audible *department*** (`category_id: digital-text` / `audible`)
+  and **paginate up to 3 pages** to fill the 20 cap — previously they only post-filtered the blended
+  all-formats page, so an audiobook search returned ~4. Paperback keeps its browse-bin; `all` stays
+  blended (`aps`). ⚠️ ebook/audiobook deep dives now cost ~2 search calls (once, then cached).
+- **Audiobooks return an empty `product_information`;** publisher + real price are backfilled from
+  `product_details` (its BSR is an Audible rank — deliberately NOT surfaced as a Books BSR; audiobook
+  price is `$0.00` in phase-1 search, real price only in product-details).
+- Cache keys bumped for the shape/logic changes: per-ASIN BSR `bsr:` → **`bsr:v2:`**, deep-dive
+  search `deepdive:` → **`deepdive:v2:`**.
+- **Reverse-ASIN capped at 10 ASINs** (client + server, `reverseAsinInput.max(10)`).
+
+**Keyword autosuggest — NEW, D1-backed:**
+- Both the SEARCH seed input and the COMPETITORS keyword input are typeahead fields
+  (`apps/web/src/components/KeywordAutosuggest.tsx`): suggest from keywords we've already observed,
+  ranked by search volume, **min prefix 3**, 150 ms debounce, keyboard + mouse select.
+- `GET /api/keywords/suggest?q=` → prefix query (`LIKE 'q%' ORDER BY search_volume DESC LIMIT 10`)
+  over a new D1 **`keywords`** dictionary table (one deduped row per keyword; **distinct from
+  `keyword_snapshots`**, which is the still-TODO §5 trend history — the dictionary is just a lookup
+  index, upserted freely including on cache hits).
+- **Capture** (fire-and-forget `waitUntil`, best-effort): `/api/search` indexes seed + related +
+  reverse-ASIN keywords (on hit AND miss); `/api/deep-dive` indexes the seed only (results are books);
+  `/api/reverse-asin` indexes the ranked keywords. A keyword's volume backfills via the upsert's
+  `coalesce` when a volume-bearing sighting arrives.
+- **D1 is now wired** (Drizzle client `apps/api/src/db/client.ts`; committed migration in
+  `apps/api/drizzle/`). Local applied via `db:migrate:local`. Everything degrades gracefully if D1 is
+  unprovisioned (suggest returns `[]`, capture no-ops) — so search never breaks.
+- ⚠️ **D1 caps bound parameters at 100/query** — the dictionary batch-insert chunks at **25 rows ×
+  3 cols = 75**. (First cut used 50 rows → silent `too many SQL variables`, swallowed by the
+  best-effort catch. If you touch batch D1 writes, respect the 100-param cap.)
+
+**Prod deploy still needs** (unchanged, plus D1): `wrangler d1 create kfa-db` + real `database_id`
+in `wrangler.toml`, `wrangler kv namespace create CACHE` + id, then `npm run db:migrate:remote`.
+
 ## Current state
 
 npm-workspaces monorepo scaffolded (2026-07-17) — typechecks and builds clean. Structure:
@@ -53,7 +107,7 @@ landing/          Standalone static marketing landing page (index.html, Tailwind
                   Fonts (Poppins/JetBrains Mono via Google Fonts) are stand-ins for the design-tool fonts.
 ```
 
-**Scaffold status: live data, auth/credits stubbed.** DataForSEO + RapidAPI HTTP calls and KV caching are implemented and working across search / deep-dive / reverse-asin. Still `TODO`: Clerk/Stripe auth + webhooks, D1 snapshot writes, and the cron refresh. The flow (validate → cache → fetch → cache) is implemented end-to-end for `/api/search` as the reference pattern.
+**Scaffold status: live data, auth/credits stubbed.** DataForSEO + RapidAPI HTTP calls and KV caching are implemented and working across search / deep-dive / reverse-asin. **D1 is now wired for the keyword-autosuggest dictionary** (Drizzle client + committed migration; see the 2026-07-19 session log). Still `TODO`: Clerk/Stripe auth + webhooks, the `keyword_snapshots` §5 trend writes, and the cron refresh. The flow (validate → cache → fetch → cache) is implemented end-to-end for `/api/search` as the reference pattern.
 
 ### Dev commands
 

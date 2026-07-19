@@ -99,7 +99,7 @@ export function relevanceTier(
 // fills the load-bearing columns per ASIN. The SPA fires them back-to-back and
 // fills rows progressively.
 
-export const bookFormatFilter = z.enum(["all", "paperback", "ebook"]);
+export const bookFormatFilter = z.enum(["all", "paperback", "ebook", "audiobook"]);
 export type BookFormatFilter = z.infer<typeof bookFormatFilter>;
 
 export const deepDiveInput = z.object({
@@ -128,7 +128,8 @@ export const serpBook = z.object({
   url: z.string().nullable(),
   // --- filled by phase 2 (BSR enrichment) ---
   author: z.string().nullable(),
-  bsrInBooks: z.number().int().nullable(), // "#N in Books" — the only comparable rank
+  bsrInBooks: z.number().int().nullable(), // "#N in Books" — the only cross-store-comparable rank
+  bsrRank: z.number().int().nullable(), // primary rank in whatever store the book lives (Books/Kindle/Audible)
   bsrStore: z.string().nullable(), // store the rank is on (Books / Kindle / Office Products…)
   publisher: z.string().nullable(),
   pages: z.number().int().nullable(),
@@ -155,9 +156,13 @@ export type BsrInput = z.infer<typeof bsrInput>;
 export const bsrRow = z.object({
   author: z.string().nullable(),
   bsrInBooks: z.number().int().nullable(),
+  bsrRank: z.number().int().nullable(),
   bsrStore: z.string().nullable(),
   publisher: z.string().nullable(),
   pages: z.number().int().nullable(),
+  // Audiobooks report $0.00 in phase-1 search; the real price lives in phase-2
+  // product-details, so it's backfilled here. Omitted for print (keep search price).
+  priceFrom: z.number().nullable().optional(),
 });
 export type BsrRow = z.infer<typeof bsrRow>;
 
@@ -180,7 +185,8 @@ export const asinSchema = z
 
 export const reverseAsinInput = z.object({
   // Batch: one credit per ASIN (brief §4). One task per ASIN under the hood.
-  asins: z.array(asinSchema).min(1).max(30),
+  // Capped at 10 to keep the per-run credit cost bounded.
+  asins: z.array(asinSchema).min(1).max(10),
 });
 export type ReverseAsinInput = z.infer<typeof reverseAsinInput>;
 
@@ -214,6 +220,21 @@ export const reverseAsinResult = z.object({
   creditsSpent: z.number().int().nonnegative(),
 });
 export type ReverseAsinResult = z.infer<typeof reverseAsinResult>;
+
+// ---------- Keyword autosuggest ----------
+
+// Typeahead over keywords we've already observed (seed searches + related +
+// reverse-ASIN results), ranked by search volume. Prefix match, served from D1.
+export const keywordSuggestion = z.object({
+  keyword: z.string(),
+  searchVolume: z.number().int().nullable(),
+});
+export type KeywordSuggestion = z.infer<typeof keywordSuggestion>;
+
+export const keywordSuggestResult = z.object({
+  suggestions: z.array(keywordSuggestion),
+});
+export type KeywordSuggestResult = z.infer<typeof keywordSuggestResult>;
 
 // ---------- Account / credits ----------
 

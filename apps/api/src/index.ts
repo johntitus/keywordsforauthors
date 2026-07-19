@@ -13,15 +13,19 @@ import {
   type BsrResult,
   type DeepDiveResult,
   type KeywordRow,
+  type KeywordSuggestResult,
   type RankedKeyword,
   type ReverseAsinResult,
   type SearchResult,
 } from "@kfa/shared";
+import { desc, like, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Env, Variables } from "./env.js";
 import { fetchRankedKeywords, fetchRelatedKeywords } from "./dataforseo.js";
 import { rapidBsr, rapidSearch } from "./rapidapi.js";
+import { getDb } from "./db/client.js";
+import { keywords as keywordsTable } from "./db/schema.js";
 
 export { CreditLedger } from "./credit-ledger.js";
 
@@ -130,6 +134,49 @@ function byRelevance(x: KeywordRow, y: KeywordRow): number {
 }
 
 /**
+ * Upsert observed keywords into the D1 autosuggest dictionary. Best-effort and
+ * fire-and-forget (call via `waitUntil`): D1 may be unprovisioned and this must
+ * never affect the search response. Keeps the most-recent known volume per
+ * keyword and bumps a seen counter. Chunked to stay under SQLite's bound-param
+ * limit; deduped so a keyword is written once per call.
+ */
+async function indexKeywords(
+  env: Env,
+  entries: { keyword: string; searchVolume: number | null; source: string }[],
+): Promise<void> {
+  const byKw = new Map<string, { keyword: string; searchVolume: number | null; source: string }>();
+  for (const e of entries) {
+    const k = e.keyword.trim().toLowerCase();
+    if (!k) continue;
+    const prev = byKw.get(k);
+    if (!prev || (e.searchVolume ?? -1) > (prev.searchVolume ?? -1)) {
+      byKw.set(k, { keyword: k, searchVolume: e.searchVolume, source: e.source });
+    }
+  }
+  const rows = [...byKw.values()];
+  if (!rows.length) return;
+
+  const db = getDb(env);
+  // D1 caps bound parameters at 100 per query; each row binds 3 columns, so keep
+  // rows-per-insert × 3 well under that (25 × 3 = 75).
+  const CHUNK = 25;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    await db
+      .insert(keywordsTable)
+      .values(rows.slice(i, i + CHUNK))
+      .onConflictDoUpdate({
+        target: keywordsTable.keyword,
+        set: {
+          // Most-recent known volume wins; keep the old one if this sighting was null.
+          searchVolume: sql`coalesce(excluded.search_volume, ${keywordsTable.searchVolume})`,
+          seenCount: sql`${keywordsTable.seenCount} + 1`,
+          updatedAt: sql`(unixepoch())`,
+        },
+      });
+  }
+}
+
+/**
  * SEARCH — seed keyword → the FULL path: related keywords (graph) + the keywords
  * the ranking competitor books own (reverse-ASIN), merged into one list. Related
  * wins on collisions (it carries a real graph depth). Pattern: validate → cache →
@@ -149,6 +196,13 @@ app.post("/api/search", async (c) => {
     // Re-apply the blocklist on the way out so newly-added junk terms are dropped
     // from already-cached results without needing to bump the cache version.
     const keywords = cached.keywords.filter((k) => !isNeverShow(k.keyword));
+    // Keep the autosuggest dictionary warm even when the search itself is cached.
+    c.executionCtx.waitUntil(
+      indexKeywords(c.env, [
+        { keyword, searchVolume: null, source: "seed" },
+        ...keywords.map((k) => ({ keyword: k.keyword, searchVolume: k.searchVolume, source: k.source ?? "related" })),
+      ]).catch(() => {}),
+    );
     return c.json({ ...cached, keywords, cached: true } satisfies SearchResult);
   }
 
@@ -191,7 +245,37 @@ app.post("/api/search", async (c) => {
     seedIndexedResults: mined.totalResults,
   };
   await c.env.CACHE.put(cacheKey, JSON.stringify(result), { expirationTtl: TTL_30_DAYS });
+  // Feed the autosuggest dictionary: the seed plus every keyword we surfaced.
+  c.executionCtx.waitUntil(
+    indexKeywords(c.env, [
+      { keyword, searchVolume: null, source: "seed" },
+      ...keywords.map((k) => ({ keyword: k.keyword, searchVolume: k.searchVolume, source: k.source ?? "related" })),
+    ]).catch(() => {}),
+  );
   return c.json(result);
+});
+
+/**
+ * KEYWORD AUTOSUGGEST — prefix typeahead over the D1 dictionary of keywords we've
+ * already observed, ranked by search volume. Best-effort: if D1 is unprovisioned
+ * or the query fails, degrade to no suggestions rather than erroring.
+ */
+app.get("/api/keywords/suggest", async (c) => {
+  // Strip LIKE wildcards so input can't alter the match semantics.
+  const q = (c.req.query("q") ?? "").trim().toLowerCase().replace(/[%_]/g, "");
+  // Min prefix 3: keeps hot 2-letter prefixes off the query (matches the client).
+  if (q.length < 3) return c.json({ suggestions: [] } satisfies KeywordSuggestResult);
+  try {
+    const rows = await getDb(c.env)
+      .select({ keyword: keywordsTable.keyword, searchVolume: keywordsTable.searchVolume })
+      .from(keywordsTable)
+      .where(like(keywordsTable.keyword, `${q}%`))
+      .orderBy(desc(keywordsTable.searchVolume))
+      .limit(10);
+    return c.json({ suggestions: rows } satisfies KeywordSuggestResult);
+  } catch {
+    return c.json({ suggestions: [] } satisfies KeywordSuggestResult);
+  }
 });
 
 /**
@@ -205,7 +289,16 @@ app.post("/api/deep-dive", async (c) => {
     return c.json({ error: "Invalid input", code: "INVALID_INPUT" }, 400);
   }
   const { keyword, format, limit } = parsed.data;
-  const cacheKey = `deepdive:${keyword}:${format}:${limit}`;
+  // v2: ebook/audiobook now search the Kindle/Audible department + paginate to fill.
+  const cacheKey = `deepdive:v2:${keyword}:${format}:${limit}`;
+
+  // Feed the autosuggest dictionary with the searched keyword. A deep dive returns
+  // books, not keywords, so only the seed is indexable; its volume is unknown here
+  // and left null (a keyword search fills it in via the upsert's coalesce). Runs on
+  // cache hits too, so any keyword used in Competitors becomes suggestable.
+  c.executionCtx.waitUntil(
+    indexKeywords(c.env, [{ keyword, searchVolume: null, source: "deep-dive" }]).catch(() => {}),
+  );
 
   const cached = await c.env.CACHE.get<DeepDiveResult>(cacheKey, "json");
   if (cached) return c.json({ ...cached, cached: true } satisfies DeepDiveResult);
@@ -254,6 +347,16 @@ app.post("/api/reverse-asin", async (c) => {
   }
 
   const payload: ReverseAsinResult = { results, costUsd, creditsSpent: asins.length };
+  // Feed the autosuggest dictionary: the keywords these books rank for are real
+  // Amazon keywords with volumes — exactly the corpus the typeahead wants.
+  c.executionCtx.waitUntil(
+    indexKeywords(
+      c.env,
+      results.flatMap((r) =>
+        r.keywords.map((k) => ({ keyword: k.keyword, searchVolume: k.searchVolume, source: "reverse-asin" })),
+      ),
+    ).catch(() => {}),
+  );
   return c.json(payload);
 });
 

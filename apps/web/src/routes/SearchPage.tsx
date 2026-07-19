@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
+import { KeywordAutosuggest } from "../components/KeywordAutosuggest.js";
 
 /**
  * Step 1 of the loop (brief §1): seed keyword → the full path (related keywords +
@@ -11,14 +12,13 @@ import { api } from "../lib/api.js";
  * step) auto-runs the search so the loop closes without retyping.
  */
 
-type SortKey = "keyword" | "searchVolume" | "competitors" | "relevance";
+type SortKey = "keyword" | "searchVolume" | "relevance";
 type SortDir = 1 | -1; // 1 = ascending, -1 = descending
 
 // Direction a column jumps to when you first click it (before toggling).
 const DEFAULT_DIR: Record<SortKey, SortDir> = {
   keyword: 1,
   searchVolume: -1,
-  competitors: -1, // most competing books first
   relevance: -1, // High → Low
 };
 const DEFAULT_SORT = { key: "relevance" as SortKey, dir: -1 as SortDir };
@@ -26,12 +26,6 @@ const DEFAULT_SORT = { key: "relevance" as SortKey, dir: -1 as SortDir };
 const COLUMNS: { key: SortKey; label: string; title?: string }[] = [
   { key: "keyword", label: "Keyword" },
   { key: "searchVolume", label: "Volume" },
-  {
-    key: "competitors",
-    label: "Books",
-    title:
-      "How many of the seed's top competitor books (up to ~15) also rank for this keyword — an overlap/ownership signal, not the total indexed results. Blank means none of them do.",
-  },
   {
     key: "relevance",
     label: "Relevance",
@@ -44,7 +38,6 @@ const COLUMNS: { key: SortKey; label: string; title?: string }[] = [
 function sortValue(row: KeywordRow, key: SortKey): string | number | null {
   if (key === "relevance") return RELEVANCE_ORDER[relevanceTier(row)];
   if (key === "searchVolume") return row.searchVolume;
-  if (key === "competitors") return row.competitorsRanking ?? null;
   return row.keyword;
 }
 
@@ -123,11 +116,14 @@ export function SearchPage() {
           run(seed);
         }}
       >
-        <input
-          className="min-w-[220px] flex-1 rounded-lg border border-black/10 bg-white px-4 py-3 font-mono text-[15px] text-ink outline-none placeholder:text-muted/50 focus:border-clay"
+        <KeywordAutosuggest
           placeholder="stress management workbook"
           value={seed}
-          onChange={(e) => setSeed(e.target.value)}
+          onChange={setSeed}
+          onPick={(kw) => {
+            setSeed(kw);
+            run(kw);
+          }}
         />
         <button
           type="submit"
@@ -202,16 +198,6 @@ export function SearchPage() {
                   <td className="px-4 py-3 text-right font-mono text-muted">
                     {k.searchVolume?.toLocaleString() ?? "-"}
                   </td>
-                  <td
-                    className="px-4 py-3 text-right font-mono text-muted"
-                    title={
-                      k.bestCompetitorRank != null
-                        ? `best rank #${k.bestCompetitorRank} among competing books`
-                        : undefined
-                    }
-                  >
-                    {k.competitorsRanking ?? "—"}
-                  </td>
                   <td className="px-4 py-3 text-right">
                     {(() => {
                       const tier = relevanceTier(k);
@@ -236,7 +222,7 @@ export function SearchPage() {
                       onClick={() => navigate(`/deep-dive?keyword=${encodeURIComponent(k.keyword)}`)}
                       className="whitespace-nowrap rounded-full border border-clay/25 bg-clay-tint px-3 py-1 font-mono text-xs text-clay-dark transition-colors hover:bg-clay hover:text-white"
                     >
-                      Deep dive →
+                      Competitors →
                     </button>
                   </td>
                 </tr>

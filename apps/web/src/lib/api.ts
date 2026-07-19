@@ -2,6 +2,7 @@ import type {
   BookFormatFilter,
   BsrResult,
   DeepDiveResult,
+  KeywordSuggestResult,
   ReverseAsinResult,
   SearchResult,
 } from "@kfa/shared";
@@ -26,6 +27,12 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function get<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`);
+  if (!res.ok) throw new Error(`Request failed (${res.status})`);
+  return res.json() as Promise<T>;
+}
+
 export const api = {
   search: (keyword: string) => post<SearchResult>("/api/search", { keyword }),
 
@@ -37,4 +44,7 @@ export const api = {
 
   reverseAsin: (asins: string[]) =>
     post<ReverseAsinResult>("/api/reverse-asin", { asins }),
+
+  suggestKeywords: (q: string) =>
+    get<KeywordSuggestResult>(`/api/keywords/suggest?q=${encodeURIComponent(q)}`),
 };

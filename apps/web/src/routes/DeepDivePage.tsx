@@ -2,6 +2,7 @@ import type { BookFormatFilter, SerpBook } from "@kfa/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
+import { KeywordAutosuggest } from "../components/KeywordAutosuggest.js";
 
 /**
  * Step 2 of the loop: who ranks P1 for a keyword, each competitor enriched with
@@ -11,11 +12,14 @@ import { api } from "../lib/api.js";
  */
 
 type Row = SerpBook & { pending: boolean };
+// `bsrShown` is the rank actually displayed/sorted for the active result format
+// (Books rank under all-formats; the store's own rank under a single format).
+type DisplayRow = Row & { bsrShown: number | null };
 
 // --- Sortable columns (default: BSR ascending — best sellers first) ---
 // Author now lives under the title, so it's not its own column.
 type DiveSortKey =
-  | "title" | "asin" | "priceFrom" | "ratingValue" | "ratingVotes" | "bsrInBooks" | "publisher" | "pages";
+  | "title" | "asin" | "priceFrom" | "ratingValue" | "ratingVotes" | "bsrShown" | "publisher" | "pages";
 type SortDir = 1 | -1;
 
 const DIVE_COLUMNS: { key: DiveSortKey; label: string; num?: boolean }[] = [
@@ -24,20 +28,28 @@ const DIVE_COLUMNS: { key: DiveSortKey; label: string; num?: boolean }[] = [
   { key: "priceFrom", label: "Price", num: true },
   { key: "ratingValue", label: "Rating", num: true },
   { key: "ratingVotes", label: "Reviews", num: true },
-  { key: "bsrInBooks", label: "BSR (Books)", num: true },
+  { key: "bsrShown", label: "BSR", num: true }, // header suffix is set per result format
   { key: "publisher", label: "Publisher" },
   { key: "pages", label: "Pages", num: true },
 ];
+
+// The store a single-format BSR belongs to — used for the column header suffix.
+const bsrStoreLabel = (fmt: BookFormatFilter) =>
+  fmt === "ebook" ? "Kindle" : fmt === "audiobook" ? "Audible" : "Books";
+
+// All-formats mixes stores, so only the cross-comparable "in Books" rank is shown
+// (others sort weird). A single format shares one store, so show that store's rank.
+const effectiveBsr = (r: Row, fmt: BookFormatFilter) => (fmt === "all" ? r.bsrInBooks : r.bsrRank);
 
 // Direction a column jumps to on first click. BSR/price ascending (lower = better/cheaper);
 // rating/reviews/pages descending (more first); text A→Z.
 const DIVE_DEFAULT_DIR: Record<DiveSortKey, SortDir> = {
   title: 1, asin: 1, publisher: 1,
-  priceFrom: 1, ratingValue: -1, ratingVotes: -1, bsrInBooks: 1, pages: -1,
+  priceFrom: 1, ratingValue: -1, ratingVotes: -1, bsrShown: 1, pages: -1,
 };
-const DIVE_DEFAULT_SORT = { key: "bsrInBooks" as DiveSortKey, dir: 1 as SortDir };
+const DIVE_DEFAULT_SORT = { key: "bsrShown" as DiveSortKey, dir: 1 as SortDir };
 
-function compareDive(a: Row, b: Row, key: DiveSortKey, dir: SortDir): number {
+function compareDive(a: DisplayRow, b: DisplayRow, key: DiveSortKey, dir: SortDir): number {
   const av = a[key];
   const bv = b[key];
   // Nulls always last (pending/blank rows sink), regardless of direction.
@@ -57,6 +69,13 @@ const BSR_CHUNK = 3;
 const BSR_CONCURRENCY = 8;
 
 const isBookStore = (s: string | null) => /books|kindle/i.test(s || "");
+// Audiobooks (Audible) carry no comparable Books BSR and no page count, so they
+// get a plain format label instead of a rank in the BSR column.
+const isAudiobook = (fmt: string | null) => /audiobook|audible/i.test(fmt || "");
+// Kindle/ebook rows rank in the Kindle Store (or, like some, only in subcategories),
+// never comparable to a Books BSR — so under all-formats they get a clean format
+// label instead of a raw store/category string.
+const isEbook = (fmt: string | null) => /kindle|ebook/i.test(fmt || "");
 const chunk = <T,>(arr: T[], n: number): T[][] =>
   Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
 
@@ -93,6 +112,9 @@ export function DeepDivePage() {
   const navigate = useNavigate();
   const [keyword, setKeyword] = useState(params.get("keyword") ?? "");
   const [format, setFormat] = useState<BookFormatFilter>("all");
+  // The format the CURRENT rows were fetched with — drives which BSR is shown.
+  // (Distinct from `format`, which can change before the next search runs.)
+  const [resultFormat, setResultFormat] = useState<BookFormatFilter>("all");
   const [rows, setRows] = useState<Row[]>([]);
   const [status, setStatus] = useState<"idle" | "searching" | "enriching" | "done" | "error">("idle");
   const [error, setError] = useState("");
@@ -101,10 +123,18 @@ export function DeepDivePage() {
   const [sort, setSort] = useState(DIVE_DEFAULT_SORT);
   const lastRun = useRef<string | null>(null);
 
-  const sortedRows = useMemo(
-    () => [...rows].sort((a, b) => compareDive(a, b, sort.key, sort.dir)),
-    [rows, sort],
+  // Resolve the displayed/sortable BSR for the format these rows were fetched with.
+  const displayRows = useMemo<DisplayRow[]>(
+    () => rows.map((r) => ({ ...r, bsrShown: effectiveBsr(r, resultFormat) })),
+    [rows, resultFormat],
   );
+  // While BSR is still filling in, hold rows in their original relevance order so
+  // the table fills in place instead of jumping around on each batch. Apply the
+  // active sort only once enrichment is done.
+  const sortedRows = useMemo(() => {
+    if (status !== "done") return [...displayRows].sort((a, b) => a.order - b.order);
+    return [...displayRows].sort((a, b) => compareDive(a, b, sort.key, sort.dir));
+  }, [displayRows, sort, status]);
   const toggleSort = (key: DiveSortKey) =>
     setSort((s) => (s.key === key ? { key, dir: (s.dir * -1) as SortDir } : { key, dir: DIVE_DEFAULT_DIR[key] }));
 
@@ -114,6 +144,7 @@ export function DeepDivePage() {
     lastRun.current = v;
     setStatus("searching");
     setError("");
+    setResultFormat(fmt);
     setRows([]);
     setTotalResults(null);
     setProgress({ done: 0, total: 0 });
@@ -171,7 +202,7 @@ export function DeepDivePage() {
   };
 
   const sendToReverse = () => {
-    const asins = [...new Set(rows.filter((r) => r.asin).map((r) => r.asin))].slice(0, 20);
+    const asins = [...new Set(rows.filter((r) => r.asin).map((r) => r.asin))].slice(0, 10);
     navigate(`/reverse-asin?asins=${encodeURIComponent(asins.join(","))}`);
   };
 
@@ -196,11 +227,15 @@ export function DeepDivePage() {
       </p>
 
       <form className="mt-6 flex flex-wrap items-center gap-3" onSubmit={submit}>
-        <input
-          className="min-w-[220px] flex-1 rounded-lg border border-black/10 bg-white px-4 py-3 font-mono text-[15px] text-ink outline-none placeholder:text-muted/50 focus:border-clay"
+        <KeywordAutosuggest
           placeholder="gratitude journal"
           value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
+          onChange={setKeyword}
+          onPick={(kw) => {
+            setKeyword(kw);
+            setParams({ keyword: kw }, { replace: true });
+            runDeepDive(kw, format);
+          }}
         />
         <select
           className="rounded-lg border border-black/10 bg-white px-4 py-3 text-[15px] text-ink outline-none focus:border-clay"
@@ -210,6 +245,7 @@ export function DeepDivePage() {
           <option value="all">All formats</option>
           <option value="paperback">Paperback</option>
           <option value="ebook">eBook</option>
+          <option value="audiobook">Audiobook</option>
         </select>
         <button
           type="submit"
@@ -265,7 +301,7 @@ export function DeepDivePage() {
                         col.num ? "text-right" : ""
                       } ${sort.key === col.key ? "text-clay-dark" : ""}`}
                     >
-                      {col.label}
+                      {col.key === "bsrShown" ? `BSR (${bsrStoreLabel(resultFormat)})` : col.label}
                       <span className="ml-1">{sort.key === col.key ? (sort.dir === 1 ? "▲" : "▼") : ""}</span>
                     </th>
                   ))}
@@ -314,9 +350,17 @@ export function DeepDivePage() {
                     <td className="px-3 py-3 text-right font-mono">
                       {r.pending ? (
                         <Spinner />
-                      ) : r.bsrInBooks != null ? (
-                        <span className="text-ink">#{r.bsrInBooks.toLocaleString()}</span>
-                      ) : r.bsrStore ? (
+                      ) : r.bsrShown != null ? (
+                        <span className="text-ink">#{r.bsrShown.toLocaleString()}</span>
+                      ) : resultFormat === "all" && isAudiobook(r.format) ? (
+                        <span className="text-clay-dark" title="Audible rank, not comparable to a Books BSR">
+                          Audiobook
+                        </span>
+                      ) : resultFormat === "all" && isEbook(r.format) ? (
+                        <span className="text-clay-dark" title="Kindle Store rank, not comparable to a Books BSR">
+                          eBook
+                        </span>
+                      ) : resultFormat === "all" && r.bsrStore ? (
                         <span className="text-clay-dark" title="not a Books rank, not comparable">
                           {r.bsrStore.replace(/^(Free )?in /i, "")}
                         </span>

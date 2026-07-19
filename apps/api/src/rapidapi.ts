@@ -50,6 +50,16 @@ function parseBsrInBooks(info: Record<string, unknown>): number | null {
   return m?.[1] ? Number(m[1].replace(/,/g, "")) : null;
 }
 
+// The primary rank number, whatever store it's on — "#N in Books/Kindle Store/
+// Audible Books & Originals". Comparable only WITHIN a store, so the UI surfaces it
+// only when a single format is selected (all-formats falls back to bsrInBooks).
+function parseBsrRank(info: Record<string, unknown>): number | null {
+  const raw = info?.["Best Sellers Rank"];
+  if (typeof raw !== "string") return null;
+  const m = raw.match(/#([\d,]+)\s+in\s/);
+  return m?.[1] ? Number(m[1].replace(/,/g, "")) : null;
+}
+
 // The store the FIRST rank is on ("in Books" / "Free in Kindle Store" / …) — so a
 // non-Books rank is visibly flagged rather than silently compared as if it were one.
 function parseBsrStore(info: Record<string, unknown>): string | null {
@@ -92,57 +102,81 @@ async function rapidGet(
 
 // ---------- Phase 1: search (fast, no BSR yet) ----------
 
+const toSerpBook = (p: any, order: number): SerpBook => ({
+  order,
+  title: decodeEntities(p.product_title ?? ""),
+  asin: String(p.asin ?? ""),
+  imageUrl: p.product_photo ?? null,
+  format: p.book_format ?? null,
+  priceFrom: parsePrice(p.product_price),
+  ratingValue: p.product_star_rating != null ? Number(p.product_star_rating) : null,
+  ratingVotes: p.product_num_ratings ?? null,
+  isBestSeller: !!p.is_best_seller,
+  isAmazonChoice: !!p.is_amazon_choice,
+  url: p.product_url ?? null,
+  author: null,
+  bsrInBooks: null,
+  bsrRank: null,
+  bsrStore: null,
+  publisher: null,
+  pages: null,
+});
+
 export async function rapidSearch(
   env: Env,
   keyword: string,
-  format: "all" | "paperback" | "ebook",
+  format: "all" | "paperback" | "ebook" | "audiobook",
   limit: number,
 ): Promise<{ books: SerpBook[]; returned: number; totalResults: number | null }> {
+  // Paperback filters server-side via a browse-bin; ebook/audiobook search the
+  // Kindle / Audible *department* directly (category_id) — otherwise they'd only
+  // catch the handful of that format sprinkled through the blended all-formats
+  // page, which is why an audiobook search used to return ~4. `all` stays blended.
   const bin = format === "paperback" ? RAPIDAPI_PAPERBACK_BIN : undefined;
-  const search = await rapidGet(env, "/search", {
-    query: keyword.toLowerCase(),
-    country: "US",
-    page: 1,
-    sort_by: "RELEVANCE",
-    additional_filters: bin,
-  });
+  const categoryId =
+    format === "ebook" ? "digital-text" : format === "audiobook" ? "audible" : undefined;
 
   const matchFmt = (f: unknown) => {
     if (format === "all") return true;
     const t = String(f || "").toLowerCase();
     if (format === "paperback") return t.includes("paperback");
     if (format === "ebook") return t.includes("kindle") || t.includes("ebook");
+    if (format === "audiobook") return t.includes("audiobook") || t.includes("audible");
     return true;
   };
 
-  const books: SerpBook[] = (search?.data?.products ?? [])
-    .filter((p: any) => matchFmt(p.book_format))
-    .slice(0, limit)
-    .map((p: any, order: number) => ({
-      order,
-      title: decodeEntities(p.product_title ?? ""),
-      asin: String(p.asin ?? ""),
-      imageUrl: p.product_photo ?? null,
-      format: p.book_format ?? null,
-      priceFrom: parsePrice(p.product_price),
-      ratingValue: p.product_star_rating != null ? Number(p.product_star_rating) : null,
-      ratingVotes: p.product_num_ratings ?? null,
-      isBestSeller: !!p.is_best_seller,
-      isAmazonChoice: !!p.is_amazon_choice,
-      url: p.product_url ?? null,
-      author: null,
-      bsrInBooks: null,
-      bsrStore: null,
-      publisher: null,
-      pages: null,
-    }));
+  // Department pages return ~16 results each, so one page can't fill 20. Walk a few
+  // pages until we hit `limit` (or run dry). Cached per (keyword, format, limit), so
+  // the extra calls are paid once. Bounded so a thin niche can't fan out unboundedly.
+  const MAX_PAGES = 3;
+  const books: SerpBook[] = [];
+  let totalResults: number | null = null;
 
-  return { books, returned: books.length, totalResults: search?.data?.total_products ?? null };
+  for (let page = 1; page <= MAX_PAGES && books.length < limit; page++) {
+    const search = await rapidGet(env, "/search", {
+      query: keyword.toLowerCase(),
+      country: "US",
+      page,
+      sort_by: "RELEVANCE",
+      additional_filters: bin,
+      category_id: categoryId,
+    });
+    if (page === 1) totalResults = search?.data?.total_products ?? null;
+    const products: any[] = search?.data?.products ?? [];
+    if (!products.length) break;
+    for (const p of products) {
+      if (books.length >= limit) break;
+      if (matchFmt(p.book_format)) books.push(toSerpBook(p, books.length));
+    }
+  }
+
+  return { books, returned: books.length, totalResults };
 }
 
 // ---------- Phase 2: BSR enrichment (per-ASIN, KV cached) ----------
 
-const bsrCacheKey = (asin: string) => `bsr:${asin}`;
+// v2: row shape gained bsrRank + audiobook publisher/price backfill.
+const bsrCacheKey = (asin: string) => `bsr:v2:${asin}`;
 
 export async function rapidBsr(
   env: Env,
@@ -177,7 +211,7 @@ export async function rapidBsr(
           const json = await rapidGet(env, "/product-details", {
             asin: missing.join(","),
             country: "US",
-            fields: "asin,product_information,book_author_name",
+            fields: "asin,product_information,product_details,product_price,book_author_name",
           });
           const data = json?.data;
           const arr = Array.isArray(data) ? data : data ? [data] : [];
@@ -192,13 +226,28 @@ export async function rapidBsr(
 
   for (const [asin, d] of fetched) {
     const info = (d.product_information || {}) as Record<string, unknown>;
+    // Audiobooks return an empty product_information; the same detail table lives
+    // in product_details instead. `meta` is whichever one is populated, and feeds
+    // the store-agnostic rank + publisher. bsrInBooks/bsrStore stay off `info` only
+    // so audiobooks keep a null Books rank (SERP purity is unchanged), and pages
+    // stay off `info` (audiobooks have "Listening Length", not a page count).
+    const detail = (d.product_details || {}) as Record<string, unknown>;
+    const meta = Object.keys(info).length ? info : detail;
+    const isAudiobook = detail["Program Type"] === "Audiobook";
     const row: BsrRow = {
       author: d.book_author_name ? decodeEntities(d.book_author_name) : null,
       bsrInBooks: parseBsrInBooks(info),
+      bsrRank: parseBsrRank(meta),
       bsrStore: parseBsrStore(info),
-      publisher: (info.Publisher as string) ?? null,
+      publisher: (meta.Publisher as string) ?? null,
       pages: parsePages(info),
     };
+    // Phase-1 search reports $0.00 for audiobooks; the real price is here. Only
+    // override for audiobooks so print rows keep their (correct) search price.
+    if (isAudiobook) {
+      const p = parsePrice(d.product_price);
+      if (p != null) row.priceFrom = p;
+    }
     byAsin[asin] = row;
     await env.CACHE.put(bsrCacheKey(asin), JSON.stringify(row), {
       expirationTtl: BSR_TTL_SECONDS,

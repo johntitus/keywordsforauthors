@@ -12,8 +12,8 @@ build/
 .dev.vars.*
 !.dev.vars.example
 
-# Drizzle
-drizzle/
+# Drizzle: DO commit the generated migrations (apps/api/drizzle/ — SQL + meta
+# journal). They're needed to run `db:migrate:remote` against prod D1.
 
 # Env & secrets
 .env
