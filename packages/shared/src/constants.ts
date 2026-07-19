@@ -34,20 +34,23 @@ export const REVERSE_ASIN_MIN_VOLUME = 50;
 // count toward competition metrics; never average sponsored/editorial in.
 export const SERP_ORGANIC_TYPE = "amazon_serp";
 
-// DRY-SEARCH RECOVERY (memory `zero-volume-trust-problem`). When SEARCH returns 0
-// related keywords for a term Amazon still ranks books for, fall back to mining
-// the competitors' vocabulary via reverse-ASIN so we never show a bare "0 results".
-// Cost note: each mined book = 1 reverse-ASIN call (KV-cached), so this cap is the
-// credit/latency knob. 8 books ≈ the 5 tested by hand + headroom.
+// COMPETITOR MINING (memory `zero-volume-trust-problem`). Originally a dry-search
+// fallback; now runs on EVERY search (in parallel with related_keywords) — it mines
+// the ranking competitors' vocabulary via reverse-ASIN, which fills the Competitors
+// count and strengthens the co-occurrence relevance signal, and still recovers terms
+// that return 0 related keywords. Cost note: each mined book = 1 reverse-ASIN call
+// (KV-cached), and this is the DOMINANT per-search cost, so this cap is the main
+// credit/latency knob.
 // Hard floor on displayed keywords — wipe anything below this many US searches
 // (a barely-searched term isn't worth a row). Applied in /api/search after merge.
 export const MIN_SEARCH_VOLUME = 100;
 
 export const RECOVERY_SEARCH_LIMIT = 30; // competitors to scan before filtering to books
-export const RECOVERY_MAX_BOOKS = 15; // book competitors to actually reverse-ASIN
-// ↑ 15 (was 8): more books = stronger co-occurrence, so the relevance tiers spread
-// instead of collapsing to mostly "Low" on scattered seeds. Costs ~2x reverse-ASIN
-// calls per COLD search; warm repeats stay cheap (per-ASIN KV cache, brief §5).
+export const RECOVERY_MAX_BOOKS = 8; // book competitors to actually reverse-ASIN
+// ↓ 8 (was 15): dialed back for cost — 15 was ~$0.24 of reverse-ASIN calls per COLD
+// search (the dominant cost; a cold search runs deeply negative at 1 credit). 8 keeps
+// a usable co-occurrence signal and still populates the per-ASIN KV cache, at ~half
+// the cold cost. Warm repeats stay cheap regardless (per-ASIN cache, brief §5).
 
 // Credit model (brief §4): every action = 1 credit; reverse ASIN = 1 per ASIN.
 export const FREE_SIGNUP_CREDITS = 50;

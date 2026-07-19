@@ -46,6 +46,16 @@ blocklist, and shows the seed's competitor (indexed-results) count. See memory
 
 Front-end polish pass across all three tools. Typecheck + build clean.
 
+**Cost note (cold/uncached, estimated from ProjectBrief §2 unit prices):** Search ≈ **$0.27**
+(1 credit — underwater), Competitors ≈ **$0.06** (5 credits), Reverse ASIN ≈ **$0.16/10 ASINs**
+(1 credit/ASIN). ⚠️ **Search is the expensive tool, not the deep dive** — `mineCompetitors` runs
+on EVERY search (not just dry ones, despite the `RECOVERY_*` naming) and its per-ASIN reverse-ASIN
+calls are ~90% of search cost. The $0.021/credit design number + blended-cost table **predate
+this** and need re-derivation (ProjectBrief §10.2). Mitigation shipped: **`RECOVERY_MAX_BOOKS`
+15 → 8** — halves the dominant cold-search cost (~$0.27 → ~$0.16) while keeping the co-occurrence
+signal + cache population. Bigger lever left on the table (not taken, deliberately): gate mining
+to only fire on thin/dry related-keyword results.
+
 **Shared table-header pattern** (Search / Competitors / Reverse ASIN each got the same header bar
 inside the results box): left = count text (+ removable filter chips), right = a white **Filters**
 button (funnel icon, clay count badge) with a dropdown + a white **Export to CSV** button.
