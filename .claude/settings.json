@@ -30,12 +30,12 @@
       "Bash(git diff*)",
       "Bash(git log*)",
       "Bash(git show*)",
+      "Bash(git push*)",
       "Bash(lsof -i*)",
       "Bash(kill *)"
     ],
     "deny": [
-      "Bash(rm -rf *)",
-      "Bash(git push*)"
+      "Bash(rm -rf *)"
     ]
   }
 }
