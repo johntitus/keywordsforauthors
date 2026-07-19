@@ -75,6 +75,12 @@ NOT a second `getAuth()` call** — `@hono/clerk-auth`'s `getAuth` is `c.get("cl
 sign-in card inside the AppLayout chrome; nav has a live **credit balance pill** (`CreditBalance`,
 queries `/api/credits` only when signed in).
 
+**Landing (`HomePage.tsx`) auth CTAs:** "Sign in" (moved next to "Start free") and all three "Start
+free" buttons now fire the **Clerk modal in place** (`SignInButton`/`SignUpButton mode="modal"` +
+`forceRedirectUrl="/search"`) instead of routing to the gated workbench (which showed a redundant
+second sign-in). Signed-in visitors see "Open workbench" + `UserButton` instead. Shared `StartFreeCta`
+helper drives the three placements. Global CSS: enabled `<button>`s get `cursor: pointer` (index.css).
+
 **⚠️ wrangler dev does NOT re-read `.dev.vars` on source-edit reloads — only on a full restart.** A
 newly-added secret (here `CLERK_SECRET_KEY`) won't take effect until you kill & restart `dev:api`.
 Symptom that burned time: `clerkMiddleware` self-disabled (empty secret) so every gated route 500'd on

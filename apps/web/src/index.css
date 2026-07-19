@@ -31,3 +31,9 @@ body {
 .font-display {
   letter-spacing: -0.02em;
 }
+
+/* Native buttons default to the arrow cursor; use the pointer (hand) on any
+   enabled button app-wide. Disabled buttons keep the default. */
+button:not(:disabled) {
+  cursor: pointer;
+}

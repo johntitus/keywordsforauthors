@@ -1,13 +1,38 @@
+import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/react";
 import { Link } from "react-router-dom";
 import { BrandMark } from "../components/BrandMark.js";
 
 /**
  * In-app home - a faithful React port of the marketing landing page
  * (landing/index.html). Full-bleed page with its own nav + footer (rendered
- * OUTSIDE the tool chrome in AppLayout). App-entry CTAs ("Start free", "Log in")
- * route into the workbench at /search; in-page nav stays as hash anchors.
+ * OUTSIDE the tool chrome in AppLayout). App-entry CTAs fire the Clerk modal
+ * in place (sign-up for "Start free", sign-in for "Sign in") and redirect into
+ * the workbench after auth — no intermediate gated page. Once signed in they
+ * collapse to "Open workbench". In-page nav stays as hash anchors.
  * Palette + fonts come from the theme tokens added in index.css.
  */
+
+/**
+ * Primary app-entry button. Signed-out → opens the Clerk sign-up modal in place;
+ * signed-in → a plain link straight into the workbench. Same className drives
+ * both so the three placements (nav / hero / final CTA) stay visually identical.
+ */
+function StartFreeCta({ className }: { className: string }) {
+  return (
+    <>
+      <Show when="signed-out">
+        <SignUpButton mode="modal" forceRedirectUrl="/search" signInForceRedirectUrl="/search">
+          <button className={className}>Start free</button>
+        </SignUpButton>
+      </Show>
+      <Show when="signed-in">
+        <Link to="/search" className={className}>
+          Open workbench
+        </Link>
+      </Show>
+    </>
+  );
+}
 
 export function HomePage() {
   return (
@@ -22,11 +47,20 @@ export function HomePage() {
           <div className="hidden items-center gap-8 text-sm text-muted md:flex">
             <a href="#how" className="hover:text-ink">How it works</a>
             <a href="#pricing" className="hover:text-ink">Pricing</a>
-            <Link to="/search" className="hover:text-ink">Log in</Link>
           </div>
-          <Link to="/search" className="rounded-lg bg-clay px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-clay-dark">
-            Start free
-          </Link>
+          <div className="flex items-center gap-3">
+            <Show when="signed-out">
+              <SignInButton mode="modal" forceRedirectUrl="/search" signUpForceRedirectUrl="/search">
+                <button className="rounded-lg border border-transparent px-4 py-2 text-sm font-semibold text-muted transition-colors hover:border-black/15 hover:text-ink">
+                  Sign in
+                </button>
+              </SignInButton>
+            </Show>
+            <StartFreeCta className="rounded-lg bg-clay px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-clay-dark" />
+            <Show when="signed-in">
+              <UserButton />
+            </Show>
+          </div>
         </nav>
       </header>
 
@@ -43,9 +77,7 @@ export function HomePage() {
                 already ranking, and the keywords their books quietly own. No sales fantasies.
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-5">
-                <Link to="/search" className="rounded-lg bg-clay px-6 py-3 font-semibold text-white shadow-sm hover:bg-clay-dark">
-                  Start free
-                </Link>
+                <StartFreeCta className="rounded-lg bg-clay px-6 py-3 font-semibold text-white shadow-sm hover:bg-clay-dark" />
                 <a href="#how" className="inline-flex items-center gap-1.5 font-medium text-clay hover:text-clay-dark">
                   See how it works
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -312,9 +344,7 @@ export function HomePage() {
         <div className="mx-auto max-w-5xl px-6 py-20 text-center">
           <h2 className="font-display text-4xl font-bold tracking-tight text-ink">Start with 50 free credits.</h2>
           <div className="mt-7">
-            <Link to="/search" className="inline-block rounded-lg bg-clay px-7 py-3.5 font-semibold text-white shadow-sm hover:bg-clay-dark">
-              Start free
-            </Link>
+            <StartFreeCta className="inline-block rounded-lg bg-clay px-7 py-3.5 font-semibold text-white shadow-sm hover:bg-clay-dark" />
           </div>
           <p className="mt-4 font-mono text-sm text-muted">No card. No subscription. No hype.</p>
         </div>
