@@ -18,10 +18,12 @@ import {
   type ReverseAsinResult,
   type SearchResult,
 } from "@kfa/shared";
+import { clerkMiddleware } from "@hono/clerk-auth";
 import { desc, like, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Env, Variables } from "./env.js";
+import { attachUser } from "./auth.js";
 import { fetchRankedKeywords, fetchRelatedKeywords } from "./dataforseo.js";
 import { rapidBsr, rapidSearch } from "./rapidapi.js";
 import { getDb } from "./db/client.js";
@@ -32,6 +34,25 @@ export { CreditLedger } from "./credit-ledger.js";
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 app.use("*", cors());
+
+// Verify the Clerk session (Bearer JWT from the SPA or a session cookie) and
+// expose the user id as `c.var.userId` (null when signed out). Non-blocking for
+// now — see auth.ts. Skips the webhook routes, which authenticate via Svix
+// signature, not a session. Also skips entirely when Clerk isn't configured yet
+// (no secret in .dev.vars) so the tools keep working during setup.
+app.use("*", async (c, next) => {
+  if (c.req.path.startsWith("/api/webhooks/")) return next();
+  if (!c.env.CLERK_SECRET_KEY) {
+    c.set("userId", null);
+    return next();
+  }
+  return clerkMiddleware()(c, next);
+});
+app.use("*", async (c, next) => {
+  if (c.req.path.startsWith("/api/webhooks/")) return next();
+  if (!c.env.CLERK_SECRET_KEY) return next(); // userId already null
+  return attachUser(c, next);
+});
 
 app.get("/api/health", (c) => c.json({ ok: true, env: c.env.ENVIRONMENT }));
 

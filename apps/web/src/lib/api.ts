@@ -9,15 +9,23 @@ import type {
 
 /**
  * Typed fetch wrapper. Shares request/response types with the Worker via
- * @kfa/shared - the whole point of the monorepo (TechStack.md). Auth is off for
- * now (no login), so no session header is sent.
+ * @kfa/shared - the whole point of the monorepo (TechStack.md). When a user is
+ * signed in, the Clerk session JWT is attached as a Bearer token (see lib/auth.ts);
+ * signed-out requests still go through (server-side gating is deferred with credits).
  */
+import { getAuthToken } from "./auth.js";
+
 const BASE = import.meta.env.VITE_API_URL ?? "";
+
+async function authHeaders(base: Record<string, string> = {}): Promise<Record<string, string>> {
+  const token = await getAuthToken();
+  return token ? { ...base, Authorization: `Bearer ${token}` } : base;
+}
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -28,7 +36,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`);
+  const res = await fetch(`${BASE}${path}`, { headers: await authHeaders() });
   if (!res.ok) throw new Error(`Request failed (${res.status})`);
   return res.json() as Promise<T>;
 }

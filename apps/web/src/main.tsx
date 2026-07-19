@@ -1,13 +1,22 @@
+import { ClerkProvider, useAuth } from "@clerk/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import "./index.css";
+import { setTokenGetter } from "./lib/auth.js";
 import { AppLayout } from "./routes/AppLayout.js";
 import { DeepDivePage } from "./routes/DeepDivePage.js";
 import { HomePage } from "./routes/HomePage.js";
 import { ReverseAsinPage } from "./routes/ReverseAsinPage.js";
 import { SearchPage } from "./routes/SearchPage.js";
+
+const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+
+if (!PUBLISHABLE_KEY) {
+  // Fail loud in dev rather than render a blank Clerk shell (see skill pitfalls).
+  throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY — set it in apps/web/.env");
+}
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 5 * 60 * 1000, retry: 1 } },
@@ -27,10 +36,26 @@ const router = createBrowserRouter([
   },
 ]);
 
+/**
+ * Bridges Clerk's hook-only `getToken` into the plain-fetch api layer (lib/api.ts
+ * isn't a component, so it can't call useAuth). Mounted inside ClerkProvider; it
+ * hands the current token-getter to the module-level accessor in lib/auth.ts.
+ */
+function ClerkTokenBridge() {
+  const { getToken } = useAuth();
+  useEffect(() => {
+    setTokenGetter(getToken);
+  }, [getToken]);
+  return null;
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
+    <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/">
+      <ClerkTokenBridge />
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </ClerkProvider>
   </StrictMode>,
 );

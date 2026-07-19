@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@clerk/react": "^6.12.5",
     "@kfa/shared": "*",
     "@tanstack/react-query": "^5.62.11",
     "react": "^19.0.0",

@@ -1,3 +1,4 @@
+import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/react";
 import { useEffect } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { BrandMark } from "../components/BrandMark.js";
@@ -30,24 +31,43 @@ export function AppLayout() {
             <BrandMark />
             <span className="font-display text-lg font-bold text-ink">Keywords for Authors</span>
           </NavLink>
-          <nav className="flex items-center gap-1 sm:gap-2">
-            {tabs.map((t) => (
-              <NavLink
-                key={t.to}
-                to={t.to}
-                className={({ isActive }) =>
-                  [
-                    "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:px-4 sm:py-2",
-                    isActive
-                      ? "bg-clay-tint text-clay-dark"
-                      : "text-muted hover:bg-black/5 hover:text-ink",
-                  ].join(" ")
-                }
-              >
-                {t.label}
-              </NavLink>
-            ))}
-          </nav>
+          <div className="flex items-center gap-1 sm:gap-2">
+            <nav className="flex items-center gap-1 sm:gap-2">
+              {tabs.map((t) => (
+                <NavLink
+                  key={t.to}
+                  to={t.to}
+                  className={({ isActive }) =>
+                    [
+                      "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:px-4 sm:py-2",
+                      isActive
+                        ? "bg-clay-tint text-clay-dark"
+                        : "text-muted hover:bg-black/5 hover:text-ink",
+                    ].join(" ")
+                  }
+                >
+                  {t.label}
+                </NavLink>
+              ))}
+            </nav>
+            <div className="ml-1 flex items-center gap-2 border-l border-black/10 pl-2 sm:ml-2 sm:pl-3">
+              <Show when="signed-out">
+                <SignInButton mode="modal">
+                  <button className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-black/5 hover:text-ink sm:px-4 sm:py-2">
+                    Sign in
+                  </button>
+                </SignInButton>
+                <SignUpButton mode="modal">
+                  <button className="rounded-lg bg-clay px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-clay-dark sm:px-4 sm:py-2">
+                    Sign up
+                  </button>
+                </SignUpButton>
+              </Show>
+              <Show when="signed-in">
+                <UserButton />
+              </Show>
+            </div>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-10">

@@ -34,13 +34,47 @@ flow (progressive render, cache, quota meter) and the DataForSEO search/reverse-
 it for reference; it is not the product.** Needs `RAPIDAPI_KEY` + DataForSEO creds in `apps/api/.dev.vars`.
 
 **Real tool status (updated 2026-07-19):** the three tools are built in `apps/` (Worker + SPA) with
-live DataForSEO + RapidAPI calls and KV caching. **Auth + credits are still OFF** (stand-up decision,
-2026-07-18) — Clerk/Stripe wiring is kept but bypassed. **SEARCH now runs the full path**: on every
+live DataForSEO + RapidAPI calls and KV caching. **Auth verification is now WIRED (non-blocking);
+credits + gating stay OFF** (Clerk foundation shipped 2026-07-19c — see that session log). Clerk is
+installed and verifying sessions, but the tools remain usable logged-out and no credit is spent —
+`requireUser` + the webhook are staged for the future turn-on. **SEARCH now runs the full path**: on every
 seed it merges `related_keywords` with competitor mining (product-search the seed → reverse-ASIN the
 top ~15 books), tiers results **High/Medium/Low**, applies a min-volume floor + a never-show
 blocklist, and shows the seed's competitor (indexed-results) count. See memory
 `zero-volume-trust-problem` for the load-bearing details and `TODO.md` for deferred follow-ups
 (per-keyword indexed counts, search Filters/Options panel, junk-keyword filtering).
+
+## Session log — 2026-07-19c (Clerk auth foundation — non-blocking)
+
+Set up Clerk with the Clerk CLI (linked app `app_3Gjr9wsViGI96DIVaCmzs4WdGd6`, dev instance).
+Typecheck + web build clean; verified live against local Worker (:8787) + SPA. **Auth is wired but
+deliberately NON-BLOCKING** — tools still work logged-out, no credit spend. Decision (2026-07-19):
+ship the foundation only; gating + the user.created webhook are staged, not turned on.
+
+**Frontend (`@clerk/react` v6):**
+- `main.tsx`: `ClerkProvider` with `publishableKey` (init added the provider but omitted the key —
+  had to fix) + a `ClerkTokenBridge` that registers Clerk's hook-only `getToken` into a module-level
+  accessor (`apps/web/src/lib/auth.ts`) so the plain-fetch `lib/api.ts` (not a component) can attach
+  `Authorization: Bearer <jwt>` on every request. Null token ⇒ request still goes out (auth off).
+- Nav auth controls in `AppLayout.tsx`: **v6 uses `<Show when="signed-in|signed-out">`**, NOT
+  `SignedIn`/`SignedOut` (those aren't exported by `@clerk/react`). `SignInButton`/`SignUpButton`
+  (modal) + `UserButton`. `UserButton` takes NO `afterSignOutUrl` in v6 — set it on `ClerkProvider`.
+
+**Backend (Worker, `@hono/clerk-auth` + `@clerk/backend`):**
+- `apps/api/src/auth.ts`: `attachUser` (reads `getAuth(c).userId` → `c.var.userId`, null when signed
+  out; non-blocking) and a staged `requireUser` (401s signed-out — not mounted yet).
+- `index.ts`: `clerkMiddleware()` + `attachUser` applied globally after CORS, **skipping**
+  `/api/webhooks/*` (those verify via Svix, not a session) and **self-disabling when
+  `CLERK_SECRET_KEY` is unset** so nothing breaks pre-config. `Variables.userId` is now `string | null`.
+
+**Env (monorepo split — load-bearing):** the Worker needs BOTH `CLERK_SECRET_KEY` and
+`CLERK_PUBLISHABLE_KEY` in `apps/api/.dev.vars` (`@hono/clerk-auth` reads both). The SPA needs only
+`VITE_CLERK_PUBLISHABLE_KEY` in `apps/web/.env`. `clerk init` wrongly put the SECRET in the frontend
+`.env` — relocated it to the Worker and stripped it from the frontend. ⚠️ `clerk doctor` warns
+"`.env` is missing CLERK_SECRET_KEY" — that's EXPECTED here (it inspects the SPA env; the secret
+correctly lives Worker-side). ⚠️ This sandbox BLOCKS bash commands that capture a secret value from
+`.env`/`.dev.vars` (command substitution / file-to-file copy of the secret) — use the length-only
+`awk -F= '{print $1, length($2)}'` form to inspect, and let the user place secrets when bash refuses.
 
 ## Session log — 2026-07-19b (unified table headers, per-table Filters + CSV export)
 
