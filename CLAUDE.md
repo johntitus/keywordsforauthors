@@ -234,7 +234,14 @@ landing/          Standalone static marketing landing page (index.html, Tailwind
                   Fonts (Poppins/JetBrains Mono via Google Fonts) are stand-ins for the design-tool fonts.
 ```
 
-**Scaffold status: live data, auth/credits stubbed.** DataForSEO + RapidAPI HTTP calls and KV caching are implemented and working across search / deep-dive / reverse-asin. **D1 is now wired for the keyword-autosuggest dictionary** (Drizzle client + committed migration; see the 2026-07-19 session log). Still `TODO`: Clerk/Stripe auth + webhooks, the `keyword_snapshots` §5 trend writes, and the cron refresh. The flow (validate → cache → fetch → cache) is implemented end-to-end for `/api/search` as the reference pattern.
+**Scaffold status: live data; auth ON, credit deduction OFF.** DataForSEO + RapidAPI HTTP calls and KV caching are implemented and working across search / deep-dive / reverse-asin. **D1 is wired** for the keyword-autosuggest dictionary AND the users/credits projection. **Clerk auth is ON** (tools gated, 50 free credits granted on signup; see the 2026-07-19c/d session logs). The flow (validate → cache → fetch → cache) is implemented end-to-end for `/api/search` as the reference pattern.
+
+### ⭐ What's next (as of 2026-07-19d, in dependency order)
+
+1. **Credit deduction** — the only piece before the meter runs. Wire the (built-but-uncalled) `CreditLedger.spend` into each action (1/search, 1/deep-dive, 1/ASIN) with an idempotency key; 402 on insufficient funds; invalidate the `["credits"]` query so the nav pill updates. Enable `RECOVERY_*`-cost awareness (search is the expensive action — §10.2).
+2. **Stripe Checkout** — credit packs (`CREDIT_PACKS`) + `/api/webhooks/stripe` (currently a stub) to grant purchased credits. Closes the money loop.
+3. **Production Clerk + deploy** — prod instance, `wrangler secret put CLERK_SECRET_KEY`/`CLERK_PUBLISHABLE_KEY`/`CLERK_WEBHOOK_SECRET`, real webhook endpoint in the Dashboard; plus the still-pending `wrangler d1 create` + `kv namespace create` + `db:migrate:remote`.
+4. **Backlog (unrelated to auth):** `keyword_snapshots` §5 trend writes + the monthly cron refresh; product items in `TODO.md`.
 
 ### Dev commands
 
