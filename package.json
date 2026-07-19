@@ -11,6 +11,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "dev": "concurrently --names api,web --prefix-colors cyan,magenta --kill-others \"npm:dev:api\" \"npm:dev:web\"",
     "dev:web": "npm run dev --workspace @kfa/web",
     "dev:api": "npm run dev --workspace @kfa/api",
     "build": "npm run build --workspaces --if-present",
@@ -20,6 +21,7 @@
     "datavet": "node datavet/server.mjs"
   },
   "devDependencies": {
+    "concurrently": "^10.0.3",
     "typescript": "^5.7.3"
   }
 }
