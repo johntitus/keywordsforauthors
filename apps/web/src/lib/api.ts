@@ -36,7 +36,7 @@ async function get<T>(path: string): Promise<T> {
 export const api = {
   search: (keyword: string) => post<SearchResult>("/api/search", { keyword }),
 
-  deepDive: (keyword: string, format: BookFormatFilter = "all", limit = 20) =>
+  deepDive: (keyword: string, format: BookFormatFilter = "all", limit = 30) =>
     post<DeepDiveResult>("/api/deep-dive", { keyword, format, limit }),
 
   deepDiveBsr: (asins: string[]) =>

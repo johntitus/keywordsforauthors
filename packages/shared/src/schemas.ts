@@ -105,8 +105,10 @@ export type BookFormatFilter = z.infer<typeof bookFormatFilter>;
 export const deepDiveInput = z.object({
   keyword: z.string().trim().min(1).max(120).toLowerCase(),
   format: bookFormatFilter.default("all"),
-  // Cap 20 competitors (settled decision) — every row shown gets full BSR.
-  limit: z.number().int().min(1).max(48).default(20),
+  // Cap 30 competitors (~two RapidAPI pages of ~16) — every row shown gets full BSR.
+  // Format-filtered searches (ebook/audiobook) may fall short of 30 after walking
+  // MAX_PAGES (3), which is fine — we show whatever those pages yield.
+  limit: z.number().int().min(1).max(48).default(30),
 });
 export type DeepDiveInput = z.infer<typeof deepDiveInput>;
 

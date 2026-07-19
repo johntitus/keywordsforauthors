@@ -145,9 +145,11 @@ export async function rapidSearch(
     return true;
   };
 
-  // Department pages return ~16 results each, so one page can't fill 20. Walk a few
-  // pages until we hit `limit` (or run dry). Cached per (keyword, format, limit), so
-  // the extra calls are paid once. Bounded so a thin niche can't fan out unboundedly.
+  // Pages return ~16 results each, so filling the ~32 cap takes ~2 pages. Walk up to
+  // MAX_PAGES until we hit `limit` (or run dry) — format-filtered searches (ebook/
+  // audiobook) may need the 3rd page and can still fall short, which is fine. Cached
+  // per (keyword, format, limit), so the extra calls are paid once. Bounded so a thin
+  // niche can't fan out unboundedly.
   const MAX_PAGES = 3;
   const books: SerpBook[] = [];
   let totalResults: number | null = null;

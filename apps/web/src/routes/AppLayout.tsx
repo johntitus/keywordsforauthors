@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { useEffect } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { BrandMark } from "../components/BrandMark.js";
 
 const tabs = [
@@ -13,6 +14,14 @@ const tabs = [
  * jump from home into a tool feels continuous.
  */
 export function AppLayout() {
+  const { pathname } = useLocation();
+
+  // Reflect the active tool in the tab title, e.g. "Reverse ASIN - Keywords for Authors".
+  useEffect(() => {
+    const active = tabs.find((t) => pathname.startsWith(t.to));
+    document.title = active ? `${active.label} - Keywords for Authors` : "Keywords for Authors";
+  }, [pathname]);
+
   return (
     <div className="min-h-screen bg-cream font-sans text-ink antialiased">
       <header className="sticky top-0 z-30 border-b border-black/5 bg-cream/85 backdrop-blur">

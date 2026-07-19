@@ -33,9 +33,9 @@ const DIVE_COLUMNS: { key: DiveSortKey; label: string; num?: boolean }[] = [
   { key: "pages", label: "Pages", num: true },
 ];
 
-// The store a single-format BSR belongs to — used for the column header suffix.
-const bsrStoreLabel = (fmt: BookFormatFilter) =>
-  fmt === "ebook" ? "Kindle" : fmt === "audiobook" ? "Audible" : "Books";
+// Human label for the active book format (for the header chip).
+const formatLabel = (fmt: BookFormatFilter) =>
+  fmt === "paperback" ? "Paperback" : fmt === "ebook" ? "eBook" : fmt === "audiobook" ? "Audiobook" : "All formats";
 
 // All-formats mixes stores, so only the cross-comparable "in Books" rank is shown
 // (others sort weird). A single format shares one store, so show that store's rank.
@@ -68,7 +68,6 @@ function compareDive(a: DisplayRow, b: DisplayRow, key: DiveSortKey, dir: SortDi
 const BSR_CHUNK = 3;
 const BSR_CONCURRENCY = 8;
 
-const isBookStore = (s: string | null) => /books|kindle/i.test(s || "");
 // Audiobooks (Audible) carry no comparable Books BSR and no page count, so they
 // get a plain format label instead of a rank in the BSR column.
 const isAudiobook = (fmt: string | null) => /audiobook|audible/i.test(fmt || "");
@@ -96,16 +95,39 @@ function Spinner() {
   );
 }
 
-function Metric({ label, value, sub, flag }: { label: string; value: string; sub?: string; flag?: boolean }) {
-  return (
-    <div className={`min-w-[128px] rounded-xl border bg-white px-4 py-3 ${flag ? "border-clay/30" : "border-black/5"}`}>
-      <div className="font-mono text-[11px] uppercase tracking-widest text-muted/70">{label}</div>
-      <div className={`mt-1 font-display text-xl font-bold tabular-nums ${flag ? "text-clay-dark" : "text-ink"}`}>
-        {value} {sub && <span className="font-sans text-xs font-normal text-muted">{sub}</span>}
-      </div>
-    </div>
-  );
-}
+// --- Numeric range filters shown in the Filters dropdown. Each targets a display
+// field; a bound of null is unset, and rows with a null value fail any set bound. ---
+type RangeKey = "ratingValue" | "ratingVotes" | "priceFrom" | "bsrShown";
+const FILTER_FIELDS: { key: RangeKey; label: string; chip: string; step?: string }[] = [
+  { key: "priceFrom", label: "Price ($)", chip: "price", step: "0.01" },
+  { key: "ratingValue", label: "Rating (★)", chip: "rating", step: "0.1" },
+  { key: "ratingVotes", label: "Reviews", chip: "reviews" },
+  { key: "bsrShown", label: "BSR", chip: "BSR" },
+];
+type Range = { min: number | null; max: number | null };
+type Ranges = Record<RangeKey, Range>;
+type DraftRange = { min: string; max: string };
+type DraftRanges = Record<RangeKey, DraftRange>;
+const EMPTY_RANGES: Ranges = {
+  priceFrom: { min: null, max: null },
+  ratingValue: { min: null, max: null },
+  ratingVotes: { min: null, max: null },
+  bsrShown: { min: null, max: null },
+};
+const EMPTY_DRAFT: DraftRanges = {
+  priceFrom: { min: "", max: "" },
+  ratingValue: { min: "", max: "" },
+  ratingVotes: { min: "", max: "" },
+  bsrShown: { min: "", max: "" },
+};
+const rangeActive = (r: Range) => r.min != null || r.max != null;
+const fmtNum = (n: number) => n.toLocaleString();
+const rangeLabel = (chip: string, { min, max }: Range) =>
+  min != null && max != null
+    ? `${chip} ${fmtNum(min)}–${fmtNum(max)}`
+    : min != null
+      ? `${chip} ≥ ${fmtNum(min)}`
+      : `${chip} ≤ ${fmtNum(max as number)}`;
 
 export function DeepDivePage() {
   const [params, setParams] = useSearchParams();
@@ -121,20 +143,87 @@ export function DeepDivePage() {
   const [totalResults, setTotalResults] = useState<number | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [sort, setSort] = useState(DIVE_DEFAULT_SORT);
+  // ASINs the user has ticked to send to Reverse ASIN (capped at the tool's max of 10).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const lastRun = useRef<string | null>(null);
+
+  const REVERSE_ASIN_MAX = 10;
+  const toggleSelected = (asin: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(asin)) next.delete(asin);
+      else if (next.size < REVERSE_ASIN_MAX) next.add(asin);
+      return next;
+    });
+
+  // Filters (numeric ranges) applied client-side; format is refetch-triggering so
+  // it's committed via `format` and re-runs the dive on Apply.
+  const [filters, setFilters] = useState<Ranges>(EMPTY_RANGES);
+  const [draftFilters, setDraftFilters] = useState<DraftRanges>(EMPTY_DRAFT);
+  const [draftFormat, setDraftFormat] = useState<BookFormatFilter>("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const hasFilters = FILTER_FIELDS.some((f) => rangeActive(filters[f.key]));
 
   // Resolve the displayed/sortable BSR for the format these rows were fetched with.
   const displayRows = useMemo<DisplayRow[]>(
     () => rows.map((r) => ({ ...r, bsrShown: effectiveBsr(r, resultFormat) })),
     [rows, resultFormat],
   );
+  // Apply the numeric range filters. A row with no value for a bounded field fails.
+  const filteredRows = useMemo(() => {
+    if (!hasFilters) return displayRows;
+    return displayRows.filter((r) =>
+      FILTER_FIELDS.every(({ key }) => {
+        const { min, max } = filters[key];
+        if (min == null && max == null) return true;
+        const v = r[key];
+        if (v == null) return false;
+        return (min == null || v >= min) && (max == null || v <= max);
+      }),
+    );
+  }, [displayRows, filters, hasFilters]);
   // While BSR is still filling in, hold rows in their original relevance order so
   // the table fills in place instead of jumping around on each batch. Apply the
   // active sort only once enrichment is done.
   const sortedRows = useMemo(() => {
-    if (status !== "done") return [...displayRows].sort((a, b) => a.order - b.order);
-    return [...displayRows].sort((a, b) => compareDive(a, b, sort.key, sort.dir));
-  }, [displayRows, sort, status]);
+    if (status !== "done") return [...filteredRows].sort((a, b) => a.order - b.order);
+    return [...filteredRows].sort((a, b) => compareDive(a, b, sort.key, sort.dir));
+  }, [filteredRows, sort, status]);
+
+  const applyFilters = () => {
+    const parse = (s: string) => {
+      const n = Number(s.replace(/[^0-9.]/g, ""));
+      return s.trim() && Number.isFinite(n) ? n : null;
+    };
+    setFilters(
+      Object.fromEntries(
+        FILTER_FIELDS.map(({ key }) => [
+          key,
+          { min: parse(draftFilters[key].min), max: parse(draftFilters[key].max) },
+        ]),
+      ) as Ranges,
+    );
+    setFiltersOpen(false);
+    // Format change means a different SERP — refetch (numeric filters still apply).
+    if (draftFormat !== format) {
+      setFormat(draftFormat);
+      runDeepDive(keyword, draftFormat);
+    }
+  };
+  const clearFilters = () => {
+    setFilters(EMPTY_RANGES);
+    setDraftFilters(EMPTY_DRAFT);
+    setFiltersOpen(false);
+  };
+  const clearRange = (key: RangeKey) => {
+    setFilters((f) => ({ ...f, [key]: { min: null, max: null } }));
+    setDraftFilters((d) => ({ ...d, [key]: { min: "", max: "" } }));
+  };
+  const openFilters = () => {
+    // Sync the draft to what's applied (incl. current format) when opening.
+    setDraftFormat(format);
+    setFiltersOpen((o) => !o);
+  };
   const toggleSort = (key: DiveSortKey) =>
     setSort((s) => (s.key === key ? { key, dir: (s.dir * -1) as SortDir } : { key, dir: DIVE_DEFAULT_DIR[key] }));
 
@@ -149,9 +238,10 @@ export function DeepDivePage() {
     setTotalResults(null);
     setProgress({ done: 0, total: 0 });
     setSort(DIVE_DEFAULT_SORT);
+    setSelected(new Set());
     try {
       // Phase 1 - search.
-      const res = await api.deepDive(v, fmt, 20);
+      const res = await api.deepDive(v, fmt, 30);
       const initial: Row[] = res.books.map((b) => ({ ...b, pending: true }));
       setRows(initial);
       setTotalResults(res.totalResults);
@@ -190,6 +280,7 @@ export function DeepDivePage() {
     const incoming = params.get("keyword");
     if (incoming && incoming.toLowerCase() !== lastRun.current) {
       setKeyword(incoming);
+      clearFilters();
       runDeepDive(incoming, format);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -197,25 +288,48 @@ export function DeepDivePage() {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    clearFilters();
     setParams({ keyword: keyword.trim().toLowerCase() }, { replace: true });
     runDeepDive(keyword, format);
   };
 
   const sendToReverse = () => {
-    const asins = [...new Set(rows.filter((r) => r.asin).map((r) => r.asin))].slice(0, 10);
+    const asins = [...selected].slice(0, REVERSE_ASIN_MAX);
+    if (!asins.length) return;
     navigate(`/reverse-asin?asins=${encodeURIComponent(asins.join(","))}`);
   };
 
-  // --- derived metrics (tighten as BSR fills) ---
-  const withStore = rows.filter((r) => r.bsrStore);
-  const books = withStore.filter((r) => isBookStore(r.bsrStore));
-  const purity = withStore.length ? books.length / withStore.length : null;
-  const lowContent = withStore.length - books.length;
-  const prices = rows.map((r) => r.priceFrom).filter((v): v is number => v != null);
-  const votes = rows.map((r) => r.ratingVotes).filter((v): v is number => v != null);
-  const avgPrice = prices.length ? prices.reduce((a, b) => a + b, 0) / prices.length : null;
-  const avgVotes = votes.length ? Math.round(votes.reduce((a, b) => a + b, 0) / votes.length) : null;
-  const indie = rows.filter((r) => (r.publisher || "").toLowerCase().startsWith("independently")).length;
+  // Export the filtered + sorted competitors, matching the on-screen columns.
+  const exportCsv = () => {
+    if (!sortedRows.length) return;
+    const esc = (v: string | number | null | undefined) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ["Title", "Author", "ASIN", "Price", "Rating", "Reviews", "BSR", "Publisher", "Pages"];
+    const rowsOut = sortedRows.map((r) => [
+      r.title,
+      r.author ?? "",
+      r.asin,
+      r.priceFrom ?? "",
+      r.ratingValue ?? "",
+      r.ratingVotes ?? "",
+      r.bsrShown ?? "",
+      r.publisher ?? "",
+      r.pages ?? "",
+    ]);
+    const csv = [header, ...rowsOut].map((r) => r.map(esc).join(",")).join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const slug = (keyword || "competitors").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${slug || "competitors"}-competitors.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const busy = status === "searching" || status === "enriching";
 
@@ -233,20 +347,11 @@ export function DeepDivePage() {
           onChange={setKeyword}
           onPick={(kw) => {
             setKeyword(kw);
+            clearFilters();
             setParams({ keyword: kw }, { replace: true });
             runDeepDive(kw, format);
           }}
         />
-        <select
-          className="rounded-lg border border-black/10 bg-white px-4 py-3 text-[15px] text-ink outline-none focus:border-clay"
-          value={format}
-          onChange={(e) => setFormat(e.target.value as BookFormatFilter)}
-        >
-          <option value="all">All formats</option>
-          <option value="paperback">Paperback</option>
-          <option value="ebook">eBook</option>
-          <option value="audiobook">Audiobook</option>
-        </select>
         <button
           type="submit"
           disabled={busy}
@@ -260,38 +365,177 @@ export function DeepDivePage() {
 
       {rows.length > 0 && (
         <>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Metric label="Indexed results" value={totalResults?.toLocaleString() ?? "-"} sub="on Amazon" />
-            <Metric
-              label="SERP purity"
-              value={purity == null ? "-" : `${Math.round(purity * 100)}%`}
-              sub={`${books.length}/${withStore.length} in Books/Kindle`}
-              flag={purity != null && purity < 0.6}
-            />
-            <Metric label="Low-content?" value={String(lowContent)} sub="non-book rank" flag={lowContent > 0} />
-            <Metric label="Avg price" value={avgPrice == null ? "-" : `$${avgPrice.toFixed(2)}`} sub="shown" />
-            <Metric label="Avg reviews" value={avgVotes == null ? "-" : avgVotes.toLocaleString()} sub="shown" />
-            <Metric label="Indie" value={String(indie)} sub="independently pub." />
-          </div>
-
-          <div className="mt-5 flex items-center gap-4">
-            <button
-              onClick={sendToReverse}
-              className="rounded-lg bg-clay px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-clay-dark"
-            >
-              Send ASINs → Reverse ASIN
-            </button>
-            {status === "enriching" && (
-              <span className="font-mono text-sm text-muted">
-                <Spinner /> fetching BSR {progress.done}/{progress.total}
-              </span>
-            )}
-          </div>
-
-          <div className="mt-5 overflow-x-auto rounded-2xl border border-black/5 bg-white shadow-[0_8px_40px_-16px_rgba(44,39,35,0.15)]">
+          <div className="mt-8 rounded-2xl border border-black/5 bg-white shadow-[0_8px_40px_-16px_rgba(44,39,35,0.15)]">
+            <div className="flex items-center justify-between gap-3 border-b border-black/5 px-4 py-3 font-mono text-xs text-muted">
+              <div className="flex flex-wrap items-center gap-2">
+                <span>
+                  {hasFilters
+                    ? `${sortedRows.length} of top ${rows.length} competitors`
+                    : `Top ${rows.length} competitors`}
+                  {totalResults != null &&
+                    (hasFilters
+                      ? ` · ${totalResults.toLocaleString()} on Amazon`
+                      : ` of ${totalResults.toLocaleString()} on Amazon`)}
+                </span>
+                {resultFormat !== "all" && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-clay/25 bg-clay-tint px-2 py-0.5 text-clay-dark">
+                    {formatLabel(resultFormat)}
+                    <button
+                      type="button"
+                      aria-label="Clear format filter"
+                      onClick={() => {
+                        setDraftFormat("all");
+                        setFormat("all");
+                        runDeepDive(keyword, "all");
+                      }}
+                      className="leading-none opacity-60 hover:opacity-100"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                {FILTER_FIELDS.filter((f) => rangeActive(filters[f.key])).map((f) => (
+                  <span
+                    key={f.key}
+                    className="inline-flex items-center gap-1 rounded-full border border-clay/25 bg-clay-tint px-2 py-0.5 text-clay-dark"
+                  >
+                    {rangeLabel(f.chip, filters[f.key])}
+                    <button
+                      type="button"
+                      aria-label={`Clear ${f.chip} filter`}
+                      onClick={() => clearRange(f.key)}
+                      className="leading-none opacity-60 hover:opacity-100"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                {status === "enriching" && (
+                  <span className="inline-flex items-center gap-1 text-muted">
+                    <Spinner /> fetching BSR {progress.done}/{progress.total}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={sendToReverse}
+                  disabled={selected.size === 0}
+                  className="flex items-center gap-1.5 rounded-lg border border-black/15 bg-white px-3 py-1.5 font-mono text-xs text-ink transition-colors hover:bg-black/5 disabled:opacity-50"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="m21 21-4.3-4.3" />
+                  </svg>
+                  Reverse ASIN Search{selected.size > 0 ? ` (${selected.size})` : ""}
+                </button>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={openFilters}
+                    className="flex items-center gap-1.5 rounded-lg border border-black/15 bg-white px-3 py-1.5 font-mono text-xs text-ink transition-colors hover:bg-black/5"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                      <path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" />
+                    </svg>
+                    Filters
+                    {hasFilters && (
+                      <span className="ml-0.5 rounded-full bg-clay px-1.5 text-[10px] font-semibold leading-4 text-white">
+                        {FILTER_FIELDS.filter((f) => rangeActive(filters[f.key])).length}
+                      </span>
+                    )}
+                  </button>
+                  {filtersOpen && (
+                    <div className="absolute right-0 z-20 mt-2 w-72 rounded-xl border border-black/10 bg-white p-4 text-ink shadow-[0_12px_40px_-12px_rgba(44,39,35,0.25)]">
+                      <div className="font-mono text-[11px] uppercase tracking-widest text-muted/70">Format</div>
+                      <select
+                        className="mt-2 w-full rounded-lg border border-black/10 bg-white px-2.5 py-1.5 text-sm text-ink outline-none focus:border-clay"
+                        value={draftFormat}
+                        onChange={(e) => setDraftFormat(e.target.value as BookFormatFilter)}
+                      >
+                        <option value="all">All formats</option>
+                        <option value="paperback">Paperback</option>
+                        <option value="ebook">eBook</option>
+                        <option value="audiobook">Audiobook</option>
+                      </select>
+                      <div className="mt-4 space-y-3">
+                        {FILTER_FIELDS.map((f) => (
+                          <div key={f.key}>
+                            <div className="text-[10px] uppercase tracking-wide text-muted">{f.label}</div>
+                            <div className="mt-1 flex items-center gap-2">
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                min={0}
+                                step={f.step}
+                                placeholder="min"
+                                value={draftFilters[f.key].min}
+                                onChange={(e) =>
+                                  setDraftFilters((d) => ({ ...d, [f.key]: { ...d[f.key], min: e.target.value } }))
+                                }
+                                onKeyDown={(e) => e.key === "Enter" && applyFilters()}
+                                className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-clay"
+                              />
+                              <span className="text-muted">–</span>
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                min={0}
+                                step={f.step}
+                                placeholder="max"
+                                value={draftFilters[f.key].max}
+                                onChange={(e) =>
+                                  setDraftFilters((d) => ({ ...d, [f.key]: { ...d[f.key], max: e.target.value } }))
+                                }
+                                onKeyDown={(e) => e.key === "Enter" && applyFilters()}
+                                className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-clay"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-3 text-[10px] leading-snug text-muted/80">
+                        BSR fills in after enrichment; filtering on it hides rows still loading.
+                      </p>
+                      <div className="mt-4 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={clearFilters}
+                          className="text-xs text-muted transition-colors hover:text-ink"
+                        >
+                          Clear
+                        </button>
+                        <button
+                          type="button"
+                          onClick={applyFilters}
+                          className="rounded-lg bg-clay px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-clay-dark"
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  title="Export to CSV"
+                  aria-label="Export to CSV"
+                  onClick={exportCsv}
+                  className="flex items-center gap-1.5 rounded-lg border border-black/15 bg-white px-3 py-1.5 font-mono text-xs text-ink transition-colors hover:bg-black/5"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+                  </svg>
+                  Export to CSV
+                </button>
+              </div>
+            </div>
+            <div className="overflow-x-auto rounded-b-2xl">
             <table className="w-full min-w-[820px] text-[15px]">
               <thead className="text-left font-mono text-[11px] uppercase tracking-widest text-muted/70">
                 <tr>
+                  <th className="px-3 py-2.5 font-medium" />
                   <th className="px-3 py-2.5 font-medium" />
                   {DIVE_COLUMNS.map((col) => (
                     <th
@@ -301,7 +545,7 @@ export function DeepDivePage() {
                         col.num ? "text-right" : ""
                       } ${sort.key === col.key ? "text-clay-dark" : ""}`}
                     >
-                      {col.key === "bsrShown" ? `BSR (${bsrStoreLabel(resultFormat)})` : col.label}
+                      {col.label}
                       <span className="ml-1">{sort.key === col.key ? (sort.dir === 1 ? "▲" : "▼") : ""}</span>
                     </th>
                   ))}
@@ -310,6 +554,22 @@ export function DeepDivePage() {
               <tbody>
                 {sortedRows.map((r) => (
                   <tr key={r.asin || r.order} className="border-t border-black/5 align-top hover:bg-warm/40">
+                    <td className="px-3 py-3 align-middle">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 cursor-pointer accent-clay disabled:cursor-not-allowed disabled:opacity-40"
+                        checked={selected.has(r.asin)}
+                        disabled={
+                          !r.asin || (!selected.has(r.asin) && selected.size >= REVERSE_ASIN_MAX)
+                        }
+                        onChange={() => r.asin && toggleSelected(r.asin)}
+                        title={
+                          !selected.has(r.asin) && selected.size >= REVERSE_ASIN_MAX
+                            ? `Reverse ASIN accepts at most ${REVERSE_ASIN_MAX} books`
+                            : "Select to send to Reverse ASIN"
+                        }
+                      />
+                    </td>
                     <td className="px-3 py-3">
                       {r.imageUrl ? (
                         <img src={r.imageUrl} alt="" loading="lazy" className="h-14 w-auto rounded shadow-sm" />
@@ -376,6 +636,7 @@ export function DeepDivePage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </>
       )}

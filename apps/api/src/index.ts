@@ -343,7 +343,9 @@ app.post("/api/reverse-asin", async (c) => {
     // manual reverse-ASINs warm each other, driving real fetches toward zero.
     const { keywords, title, imageUrl, costUsd: cost, cached } = await rankedKeywordsCached(c.env, asin);
     costUsd += cost;
-    results.push({ asin, title, imageUrl, keywords, cached });
+    // Drop blocklisted junk (bare stopwords like "by", contraction fragments) the
+    // same way /api/search does — the raw ranked cache keeps them, we filter on read.
+    results.push({ asin, title, imageUrl, keywords: keywords.filter((k) => !isNeverShow(k.keyword)), cached });
   }
 
   const payload: ReverseAsinResult = { results, costUsd, creditsSpent: asins.length };

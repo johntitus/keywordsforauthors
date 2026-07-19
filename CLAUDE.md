@@ -42,6 +42,47 @@ blocklist, and shows the seed's competitor (indexed-results) count. See memory
 `zero-volume-trust-problem` for the load-bearing details and `TODO.md` for deferred follow-ups
 (per-keyword indexed counts, search Filters/Options panel, junk-keyword filtering).
 
+## Session log — 2026-07-19b (unified table headers, per-table Filters + CSV export)
+
+Front-end polish pass across all three tools. Typecheck + build clean.
+
+**Shared table-header pattern** (Search / Competitors / Reverse ASIN each got the same header bar
+inside the results box): left = count text (+ removable filter chips), right = a white **Filters**
+button (funnel icon, clay count badge) with a dropdown + a white **Export to CSV** button.
+- ⚠️ **Overflow gotcha:** the results box no longer uses `overflow-hidden` (it clipped the Filters
+  dropdown when the table collapsed to few/0 rows). Corner-rounding moved to an **inner wrapper**
+  around the table only (`overflow-hidden rounded-b-2xl`), so the dropdown can escape the box.
+
+**SEARCH:** header reads "N related keywords found" (cached/fresh chip removed). Filters = min/max
+**Volume** (client-side; rows with null volume fail a bound). CSV = Keyword, Volume, Relevance.
+
+**COMPETITORS (deep dive):**
+- **All metric widgets removed** (SERP purity / low-content / avg price / etc. gone). Header =
+  "Top 30 competitors of 430 on Amazon" (filtered: "N of top 30 competitors · 430 on Amazon").
+- **Cap raised 20 → 30** (`deepDiveInput.limit` default 30, still max 48; `MAX_PAGES` stays 3).
+  ~2 RapidAPI pages of ~16; format-filtered searches may fall short — that's fine. **Every row
+  still gets BSR** (cost scales ~1.5×; flat ~5-credit price now covers more enrichment).
+- **Format selector moved into the Filters dropdown** (a `<select>`, applied on **Apply** →
+  refetch; numeric filters persist). Active format shows a removable header chip.
+- Filters = min/max **Price, Rating, Reviews, BSR** (client-side). Row checkboxes (≤10) + **Reverse
+  ASIN Search** button now live in the header button group. BSR column header is just **"BSR"**.
+- CSV = Title, Author, ASIN, Price, Rating, Reviews, BSR, Publisher, Pages.
+
+**REVERSE ASIN:**
+- **Enter runs the search** (folds any in-progress draft in first); comma/space/tab make a chip.
+- Placement (all/organic/sponsored) moved into the Filters dropdown as an **Apply-based** `<select>`
+  (draft → commit on Apply), plus min/max **Volume, Avg Rank, Competitors**. Removable chips.
+- **CSV = Option A** (one row per keyword): Keyword, Volume, Avg Rank, Competitors, Placement.
+  (Tried Option B long/tidy per keyword×book — rejected.)
+
+**Backend:**
+- `by` (and all blocklisted tokens) now filtered from **/api/reverse-asin** results too (was only
+  applied in /api/search). Raw ranked cache keeps them; filtered on read.
+- **`document.title` per tool** ("Reverse ASIN - Keywords for Authors", etc.) via `AppLayout`.
+- Note: the SEARCH page's `seedIndexedResults` competitor count is fetched but **no longer shown**
+  (widget removed). The two "competitors" totals differed (209 vs 212) — same code path
+  (`rapidSearch total_products`), just Amazon's approximate count sampled at two cache times.
+
 ## Session log — 2026-07-19 (workbench polish + keyword autosuggest)
 
 Shipped on top of the "real tool status" above. All typecheck + build clean; verified against a
