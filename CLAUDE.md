@@ -31,8 +31,14 @@ callouts; memory `bsr-via-rapidapi-hybrid` has the load-bearing details. Settled
 flow (progressive render, cache, quota meter) and the DataForSEO search/reverse-asin vetting. **Keep
 it for reference; it is not the product.** Needs `RAPIDAPI_KEY` + DataForSEO creds in `apps/api/.dev.vars`.
 
-**▶ NEXT STEP: build the real tool** in `apps/` (Worker + React SPA) — port the datavet deep-dive
-logic into the real architecture (KV cache, credits, Clerk auth). Not started yet.
+**Real tool status (updated 2026-07-19):** the three tools are built in `apps/` (Worker + SPA) with
+live DataForSEO + RapidAPI calls and KV caching. **Auth + credits are still OFF** (stand-up decision,
+2026-07-18) — Clerk/Stripe wiring is kept but bypassed. **SEARCH now runs the full path**: on every
+seed it merges `related_keywords` with competitor mining (product-search the seed → reverse-ASIN the
+top ~15 books), tiers results **High/Medium/Low**, applies a min-volume floor + a never-show
+blocklist, and shows the seed's competitor (indexed-results) count. See memory
+`zero-volume-trust-problem` for the load-bearing details and `TODO.md` for deferred follow-ups
+(per-keyword indexed counts, search Filters/Options panel, junk-keyword filtering).
 
 ## Current state
 
@@ -47,7 +53,7 @@ landing/          Standalone static marketing landing page (index.html, Tailwind
                   Fonts (Poppins/JetBrains Mono via Google Fonts) are stand-ins for the design-tool fonts.
 ```
 
-**Scaffold status: wired but stubbed.** The DataForSEO HTTP calls, Clerk/Stripe auth + webhooks, D1 snapshot writes, and the cron refresh are marked `TODO` — the flow (validate → cache → spend credit → fetch → cache) is implemented end-to-end for `/api/search` as the reference pattern.
+**Scaffold status: live data, auth/credits stubbed.** DataForSEO + RapidAPI HTTP calls and KV caching are implemented and working across search / deep-dive / reverse-asin. Still `TODO`: Clerk/Stripe auth + webhooks, D1 snapshot writes, and the cron refresh. The flow (validate → cache → fetch → cache) is implemented end-to-end for `/api/search` as the reference pattern.
 
 ### Dev commands
 

@@ -1,35 +1,56 @@
-import type { KeywordRow } from "@kfa/shared";
+import { RELEVANCE_ORDER, relevanceTier, type KeywordRow, type RelevanceTier } from "@kfa/shared";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
 
 /**
- * Step 1 of the loop (brief §1): seed keyword → related keywords + volumes.
- * Each row hands off to a deep dive (step 2). A `?seed=` param (set by the
- * reverse-ASIN step) auto-runs the search so the loop closes without retyping.
+ * Step 1 of the loop (brief §1): seed keyword → the full path (related keywords +
+ * the keywords the ranking competitor books own), merged into one list. Each row
+ * hands off to a deep dive (step 2). A `?seed=` param (set by the reverse-ASIN
+ * step) auto-runs the search so the loop closes without retyping.
  */
 
-type SortKey = "keyword" | "searchVolume" | "depth";
+type SortKey = "keyword" | "searchVolume" | "competitors" | "relevance";
 type SortDir = 1 | -1; // 1 = ascending, -1 = descending
 
 // Direction a column jumps to when you first click it (before toggling).
-const DEFAULT_DIR: Record<SortKey, SortDir> = { keyword: 1, searchVolume: -1, depth: 1 };
-const DEFAULT_SORT = { key: "depth" as SortKey, dir: 1 as SortDir };
+const DEFAULT_DIR: Record<SortKey, SortDir> = {
+  keyword: 1,
+  searchVolume: -1,
+  competitors: -1, // most competing books first
+  relevance: -1, // High → Low
+};
+const DEFAULT_SORT = { key: "relevance" as SortKey, dir: -1 as SortDir };
 
 const COLUMNS: { key: SortKey; label: string; title?: string }[] = [
   { key: "keyword", label: "Keyword" },
   { key: "searchVolume", label: "Volume" },
   {
-    key: "depth",
+    key: "competitors",
+    label: "Books",
+    title:
+      "How many of the seed's top competitor books (up to ~15) also rank for this keyword — an overlap/ownership signal, not the total indexed results. Blank means none of them do.",
+  },
+  {
+    key: "relevance",
     label: "Relevance",
-    title: "How closely related to your seed. Fewer hops in Amazon's related-keyword graph means more relevant.",
+    title:
+      "How on-topic the keyword is. Related keywords tier off how close they sit in Amazon's keyword graph; keywords found only through competing books tier off how many of those books rank for them.",
   },
 ];
 
+// The per-row value each sort key compares on.
+function sortValue(row: KeywordRow, key: SortKey): string | number | null {
+  if (key === "relevance") return RELEVANCE_ORDER[relevanceTier(row)];
+  if (key === "searchVolume") return row.searchVolume;
+  if (key === "competitors") return row.competitorsRanking ?? null;
+  return row.keyword;
+}
+
 function compareRows(a: KeywordRow, b: KeywordRow, key: SortKey, dir: SortDir): number {
-  const av = a[key];
-  const bv = b[key];
+  const av = sortValue(a, key);
+  const bv = sortValue(b, key);
   // Nulls always sort last, regardless of direction.
   if (av == null && bv != null) return 1;
   if (bv == null && av != null) return -1;
@@ -39,10 +60,16 @@ function compareRows(a: KeywordRow, b: KeywordRow, key: SortKey, dir: SortDir): 
   }
   base *= dir;
   if (base !== 0) return base;
-  // Tiebreak: higher volume first, then keyword A→Z - keeps same-depth rows useful.
+  // Tiebreak: higher volume first, then keyword A→Z — keeps same-tier rows useful.
   const vol = (b.searchVolume ?? -1) - (a.searchVolume ?? -1);
   return vol !== 0 ? vol : a.keyword.localeCompare(b.keyword);
 }
+
+const TIER_PILL: Record<RelevanceTier, string> = {
+  High: "border-clay/25 bg-clay-tint text-clay-dark",
+  Medium: "border-black/10 bg-warm text-ink",
+  Low: "border-black/5 bg-transparent text-muted",
+};
 
 export function SearchPage() {
   const [params, setParams] = useSearchParams();
@@ -51,7 +78,7 @@ export function SearchPage() {
   const [sort, setSort] = useState(DEFAULT_SORT);
   const search = useMutation({ mutationFn: (kw: string) => api.search(kw) });
 
-  // Reset to the default sort (depth ascending) whenever a new result arrives.
+  // Reset to the default sort (relevance, High first) whenever a new result arrives.
   useEffect(() => {
     if (search.data) setSort(DEFAULT_SORT);
   }, [search.data]);
@@ -118,7 +145,22 @@ export function SearchPage() {
         <p className="mt-4 text-sm text-clay-dark">{(search.error as Error).message}</p>
       )}
 
-      {search.data && (
+      {search.data && search.data.seedIndexedResults != null && (
+        <div className="mt-6 inline-flex items-baseline gap-2 rounded-xl border border-black/5 bg-white px-4 py-3 shadow-[0_8px_40px_-16px_rgba(44,39,35,0.15)]">
+          <span className="font-display text-2xl font-bold tracking-tight text-ink">
+            {search.data.seedIndexedResults.toLocaleString()}
+          </span>
+          <span className="font-mono text-xs text-muted">competitors</span>
+        </div>
+      )}
+
+      {search.data && search.data.keywords.length === 0 && (
+        <p className="mt-6 font-mono text-sm text-muted">
+          No related keywords and no competing books — “{search.data.seed}” looks genuinely empty.
+        </p>
+      )}
+
+      {search.data && search.data.keywords.length > 0 && (
         <div className="mt-8 overflow-hidden rounded-2xl border border-black/5 bg-white shadow-[0_8px_40px_-16px_rgba(44,39,35,0.15)]">
           <div className="flex items-center justify-between gap-3 border-b border-black/5 px-4 py-3 font-mono text-xs text-muted">
             <span>
@@ -160,7 +202,35 @@ export function SearchPage() {
                   <td className="px-4 py-3 text-right font-mono text-muted">
                     {k.searchVolume?.toLocaleString() ?? "-"}
                   </td>
-                  <td className="px-4 py-3 text-right font-mono text-muted">{k.depth ?? "-"}</td>
+                  <td
+                    className="px-4 py-3 text-right font-mono text-muted"
+                    title={
+                      k.bestCompetitorRank != null
+                        ? `best rank #${k.bestCompetitorRank} among competing books`
+                        : undefined
+                    }
+                  >
+                    {k.competitorsRanking ?? "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {(() => {
+                      const tier = relevanceTier(k);
+                      return (
+                        <span
+                          title={
+                            k.source === "reverse-asin"
+                              ? `${k.competitorsRanking ?? 0} competing book(s) · best rank ${
+                                  k.bestCompetitorRank ?? "—"
+                                } · vol ${k.searchVolume ?? "—"}`
+                              : `Graph depth ${k.depth}`
+                          }
+                          className={`inline-block rounded-full border px-2.5 py-0.5 font-mono text-xs ${TIER_PILL[tier]}`}
+                        >
+                          {tier}
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => navigate(`/deep-dive?keyword=${encodeURIComponent(k.keyword)}`)}

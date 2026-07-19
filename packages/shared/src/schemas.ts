@@ -14,11 +14,26 @@ export const searchInput = z.object({
 });
 export type SearchInput = z.infer<typeof searchInput>;
 
+// Where a keyword row came from. Every SEARCH now runs the FULL path (related
+// keywords + competitor mining), so a row is one of:
+//  - "related": DataForSEO related_keywords — relevance = graph `depth`.
+//  - "reverse-asin": found ONLY via the competitors Amazon ranks for the seed
+//    (not in the related set) — reverse-ASIN has no graph depth, so relevance =
+//    `competitorsRanking` (how many competitor books rank for it).
+export const keywordSource = z.enum(["related", "reverse-asin"]);
+export type KeywordSource = z.infer<typeof keywordSource>;
+
 export const keywordRow = z.object({
   keyword: z.string(),
   searchVolume: z.number().int().nonnegative().nullable(),
   depth: z.number().int().nonnegative(),
   lastUpdatedTime: z.string().nullable(),
+  // Provenance + the relevance inputs. `source` absent ⇒ treat as "related".
+  source: keywordSource.optional(),
+  // Set only on "reverse-asin" rows: how many competitor books rank for it, and
+  // the best (lowest) SERP rank any of them holds.
+  competitorsRanking: z.number().int().nonnegative().nullable().optional(),
+  bestCompetitorRank: z.number().int().positive().nullable().optional(),
 });
 export type KeywordRow = z.infer<typeof keywordRow>;
 
@@ -27,8 +42,55 @@ export const searchResult = z.object({
   keywords: z.array(keywordRow),
   cached: z.boolean(),
   costUsd: z.number().nonnegative(),
+  // Total indexed Amazon results for the SEED phrase itself (RapidAPI
+  // `total_products` from the one seed search we already run) — a free
+  // competition figure for the searched term. null if the search returned none.
+  seedIndexedResults: z.number().int().nonnegative().nullable().optional(),
 });
 export type SearchResult = z.infer<typeof searchResult>;
+
+// ---------- Relevance tiering (shared by Worker sort/cap + SPA label) ----------
+// One definition so the Worker and the UI agree.
+//
+// Related rows tier off graph `depth` (fewer hops = closer). Competitor rows
+// BLEND three signals and take the strongest (product call 2026-07-19), because
+// pure co-occurrence buried broad on-theme terms — e.g. "mental health" (70k
+// searches) came from a single mined book, so it scored Low. The blend:
+//   - co-occurrence : how many competitor books rank for it (ownership breadth)
+//   - best rank     : the lowest SERP rank any competitor holds (ownership depth —
+//                     a book ranking top-3 strongly "owns" the term)
+//   - demand        : raw search volume can lift a term to Medium (never High), so
+//                     a prominent on-theme head term isn't buried by low overlap
+// All thresholds are tunable knobs — tune here and both Worker and UI follow.
+export type RelevanceTier = "High" | "Medium" | "Low";
+export const RELEVANCE_ORDER: Record<RelevanceTier, number> = { High: 3, Medium: 2, Low: 1 };
+
+// Breadth (how many books own the term) IS the tier. A keyword only one book
+// ranks for isn't really ownable/actionable — even at high volume — so Medium now
+// requires ≥2 books (was: also lifted by a single top-3 rank or high volume, which
+// bloated Medium). A top-3 rank only *corroborates* 2-book ownership into High.
+// Single-book terms fall to "Low" and are DISCARDED by the Worker. (Demand is
+// handled separately by the MIN_SEARCH_VOLUME floor, not by the tier.)
+const CO_HIGH = 3; // ≥ this many ranking books ⇒ High
+const CO_MEDIUM = 2; // 2 books ⇒ Medium; 2 books with a top-3 rank ⇒ High
+const RANK_STRONG = 3; // a competitor ranks it top-3 = strong ownership (lifts 2-book → High)
+
+export function relevanceTier(
+  row: Pick<KeywordRow, "source" | "depth" | "competitorsRanking" | "bestCompetitorRank" | "searchVolume">,
+): RelevanceTier {
+  if (row.source === "reverse-asin") {
+    const n = row.competitorsRanking ?? 0;
+    const rank = row.bestCompetitorRank ?? Infinity;
+    if (n >= CO_HIGH) return "High";
+    if (n >= CO_MEDIUM && rank <= RANK_STRONG) return "High"; // 2 books, one owns it top-3
+    if (n >= CO_MEDIUM) return "Medium";
+    return "Low";
+  }
+  // related_keywords: graph depth (0 = seed itself).
+  if (row.depth <= 1) return "High";
+  if (row.depth <= 3) return "Medium";
+  return "Low";
+}
 
 // ---------- DEEP DIVE (RapidAPI real-time-amazon-data, BSR hybrid) ----------
 // Switched from DataForSEO Merchant to RapidAPI on 2026-07-18 because RapidAPI

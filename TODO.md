@@ -42,3 +42,40 @@ book search intent.
 Approaches to evaluate: simple blocklist/stopword pass · a category signal ·
 or reuse the book-coverage signal above (a term no book ranks for is a filter
 candidate). Undecided — capture data first via the datavet tool.
+
+## Search Filters/Options component — DEFERRED (noted 2026-07-19)
+
+A user-facing **Filters/Options panel on the keyword Search page** so users can
+narrow the (now always-on) full-path results themselves instead of us deciding
+for them. Motivating case: competitor mining for "stress management for women"
+pulls in **coloring-book / journal / planner** vocabulary (and some non-English
+terms) — we deliberately do NOT hard-exclude those in the pipeline, because some
+authors genuinely target "coloring book" / "journal" niches. Let the user toggle:
+- exclude off-genre formats (coloring / journal / planner / notebook)
+- English-only keywords
+- min search volume · relevance tier (High/Med/Low) · source (related vs competitor)
+
+Client-side filter over the returned list to start (no extra API cost). This is
+the agreed alternative to hard-filtering in the mining step (decided 2026-07-19).
+
+## Per-keyword "indexed results" (real competition count) — DEFERRED (noted 2026-07-19)
+
+Show, per keyword in a Search, the **# of indexed Amazon results** — the
+`total_products` number the deep-dive already surfaces as its top widget (e.g.
+"stress management for kids" → 203). This is the TRUE competition count the user
+wants (distinct from the co-occurrence/overlap "Books" column, which only counts
+how many of the seed's ~15 mined books also rank for the term).
+
+Cost shape (why deferred, and why it may still be worth it):
+- Requires **1 RapidAPI product search per keyword** — a mini-deep-dive on every
+  row (~250 calls/search cold, rate-limited → ~1–2 min). Turns a 1-credit search
+  into many; that's the cost the deep-dive step exists to isolate.
+- BUT each call is **cached per keyword (reuse the `deepdive:*` cache)**, so it
+  **rapidly warms the deep-dive cache** — first call expensive, repeats ≈ free.
+  Over time this could pay for itself and make later real deep-dives instant.
+  User's read: "may be worth it… quickly expands our cache."
+
+Bounding options when we build it: top-N by relevance/volume (auto) · progressive
+lazy-fill like the deep-dive BSR column · on-demand per-row button. Freebie we can
+add anytime at zero cost: the **seed's own** indexed count (the `total_products`
+from the seed search we currently discard) as a top-of-page widget.
