@@ -34,15 +34,51 @@ flow (progressive render, cache, quota meter) and the DataForSEO search/reverse-
 it for reference; it is not the product.** Needs `RAPIDAPI_KEY` + DataForSEO creds in `apps/api/.dev.vars`.
 
 **Real tool status (updated 2026-07-19):** the three tools are built in `apps/` (Worker + SPA) with
-live DataForSEO + RapidAPI calls and KV caching. **Auth verification is now WIRED (non-blocking);
-credits + gating stay OFF** (Clerk foundation shipped 2026-07-19c — see that session log). Clerk is
-installed and verifying sessions, but the tools remain usable logged-out and no credit is spent —
-`requireUser` + the webhook are staged for the future turn-on. **SEARCH now runs the full path**: on every
+live DataForSEO + RapidAPI calls and KV caching. **Auth is ON: tools require sign-in, and signup
+grants 50 free credits — but credit DEDUCTION is still OFF** (2026-07-19d — see that session log).
+The tool endpoints are gated (`requireUser`/`userId` check + SPA `ProtectedRoute`); the Clerk
+`user.created` webhook + a lazy first-read both provision users & grant the free credits idempotently;
+`/api/credits` + a nav balance pill are live. Nothing is spent yet — the `CreditLedger.spend` path is
+built but not called. **SEARCH now runs the full path**: on every
 seed it merges `related_keywords` with competitor mining (product-search the seed → reverse-ASIN the
 top ~15 books), tiers results **High/Medium/Low**, applies a min-volume floor + a never-show
 blocklist, and shows the seed's competitor (indexed-results) count. See memory
 `zero-volume-trust-problem` for the load-bearing details and `TODO.md` for deferred follow-ups
 (per-keyword indexed counts, search Filters/Options panel, junk-keyword filtering).
+
+## Session log — 2026-07-19d (gate the tools + grant free credits on signup)
+
+Built on 19c. Scope (user decision): wire the `user.created` webhook + gate the tools; **SKIP credit
+deduction and Stripe.** So credits are now GRANTED but never SPENT. Typecheck + build clean; verified
+live end-to-end with a real minted session JWT (signed-out → 401; valid token → `{"credits":50}`,
+idempotent; D1 `users` + `credit_transactions` rows written).
+
+**Provisioning (`apps/api/src/credits.ts` + `CreditLedger.grantOnce`):**
+- Signup grant is idempotent via a new DO `grantOnce(amount, key)` (keyed `signup` per user, since the
+  DO is per-user). Driven from TWO places without double-granting: the Clerk webhook (proper path) AND
+  a lazy first-read in `GET /api/credits` (self-heals local dev where no webhook tunnel is set up, and
+  the eventual-consistency gap before the webhook lands). `getBalance` = `grantSignupCredits(env,uid)`.
+- D1 `users`/`credit_transactions` are the projection (best-effort; DO is authoritative). The lazy path
+  leaves `email=""` (no session email); the webhook backfills it via `onConflictDoUpdate`. Deduction
+  intentionally absent — `CreditLedger.spend` exists but is uncalled.
+
+**Webhook (`/api/webhooks/clerk`):** real handler now. `verifyWebhook(c.req.raw, { signingSecret })`
+from `@clerk/backend/webhooks`; `user.created`/`updated` → grant + email sync, `user.deleted` →
+`removeUser` (DO `reset()` + D1 cleanup). Returns **501 until `CLERK_WEBHOOK_SECRET` is set** (fails
+loud, not silent). Excluded from the auth middleware (Svix signature, not a session). To test locally:
+`clerk webhooks listen ...` tunnel + add the relay URL in the Dashboard + set the secret in `.dev.vars`.
+
+**Gating:** `PROTECTED_PATHS` (search, deep-dive, deep-dive/bsr, reverse-asin, keywords/suggest,
+credits) 401 when `!c.var.userId`. ⚠️ **Gate off `c.var.userId` (already resolved by `attachUser`),
+NOT a second `getAuth()` call** — `@hono/clerk-auth`'s `getAuth` is `c.get("clerkAuth")(opts)`, and if
+`clerkMiddleware` was skipped it's `undefined(...)` → 500. SPA mirror: `ProtectedRoute` shows a
+sign-in card inside the AppLayout chrome; nav has a live **credit balance pill** (`CreditBalance`,
+queries `/api/credits` only when signed in).
+
+**⚠️ wrangler dev does NOT re-read `.dev.vars` on source-edit reloads — only on a full restart.** A
+newly-added secret (here `CLERK_SECRET_KEY`) won't take effect until you kill & restart `dev:api`.
+Symptom that burned time: `clerkMiddleware` self-disabled (empty secret) so every gated route 500'd on
+`getAuth`. If auth behaves as though a secret is missing after you just set it, restart the Worker.
 
 ## Session log — 2026-07-19c (Clerk auth foundation — non-blocking)
 

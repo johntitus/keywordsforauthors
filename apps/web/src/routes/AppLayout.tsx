@@ -2,6 +2,7 @@ import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/react";
 import { useEffect } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { BrandMark } from "../components/BrandMark.js";
+import { CreditBalance } from "../components/CreditBalance.js";
 
 const tabs = [
   { to: "/search", label: "Keyword Search" },
@@ -64,6 +65,7 @@ export function AppLayout() {
                 </SignUpButton>
               </Show>
               <Show when="signed-in">
+                <CreditBalance />
                 <UserButton />
               </Show>
             </div>

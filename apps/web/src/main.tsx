@@ -8,6 +8,7 @@ import { setTokenGetter } from "./lib/auth.js";
 import { AppLayout } from "./routes/AppLayout.js";
 import { DeepDivePage } from "./routes/DeepDivePage.js";
 import { HomePage } from "./routes/HomePage.js";
+import { ProtectedRoute } from "./routes/ProtectedRoute.js";
 import { ReverseAsinPage } from "./routes/ReverseAsinPage.js";
 import { SearchPage } from "./routes/SearchPage.js";
 
@@ -25,13 +26,19 @@ const queryClient = new QueryClient({
 const router = createBrowserRouter([
   // Home = the full-bleed marketing landing (its own nav + footer).
   { path: "/", element: <HomePage /> },
-  // The workbench tools share the tab-nav chrome.
+  // The workbench tools share the tab-nav chrome, and require sign-in — the
+  // ProtectedRoute swaps in a sign-in prompt (nav stays visible) when signed out.
   {
     element: <AppLayout />,
     children: [
-      { path: "search", element: <SearchPage /> },
-      { path: "deep-dive", element: <DeepDivePage /> },
-      { path: "reverse-asin", element: <ReverseAsinPage /> },
+      {
+        element: <ProtectedRoute />,
+        children: [
+          { path: "search", element: <SearchPage /> },
+          { path: "deep-dive", element: <DeepDivePage /> },
+          { path: "reverse-asin", element: <ReverseAsinPage /> },
+        ],
+      },
     ],
   },
 ]);

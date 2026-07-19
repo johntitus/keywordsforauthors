@@ -1,6 +1,7 @@
 import type {
   BookFormatFilter,
   BsrResult,
+  CreditBalance,
   DeepDiveResult,
   KeywordSuggestResult,
   ReverseAsinResult,
@@ -55,4 +56,6 @@ export const api = {
 
   suggestKeywords: (q: string) =>
     get<KeywordSuggestResult>(`/api/keywords/suggest?q=${encodeURIComponent(q)}`),
+
+  credits: () => get<CreditBalance>("/api/credits"),
 };

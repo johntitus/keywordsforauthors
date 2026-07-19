@@ -19,11 +19,14 @@ import {
   type SearchResult,
 } from "@kfa/shared";
 import { clerkMiddleware } from "@hono/clerk-auth";
+import { verifyWebhook } from "@clerk/backend/webhooks";
 import { desc, like, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import type { CreditBalance } from "@kfa/shared";
 import type { Env, Variables } from "./env.js";
 import { attachUser } from "./auth.js";
+import { getBalance, grantSignupCredits, removeUser } from "./credits.js";
 import { fetchRankedKeywords, fetchRelatedKeywords } from "./dataforseo.js";
 import { rapidBsr, rapidSearch } from "./rapidapi.js";
 import { getDb } from "./db/client.js";
@@ -54,7 +57,34 @@ app.use("*", async (c, next) => {
   return attachUser(c, next);
 });
 
+// Gate the credit-bearing tool endpoints behind sign-in (decision 2026-07-19).
+// Health + webhooks stay public; the SPA mirrors this with a ProtectedRoute.
+// Keys off the userId that attachUser already resolved (single getAuth per
+// request) — 401s signed-out requests, and fails closed if Clerk is unconfigured
+// (no secret ⇒ userId null ⇒ 401), which is correct once gating is on.
+const PROTECTED_PATHS = new Set([
+  "/api/search",
+  "/api/deep-dive",
+  "/api/deep-dive/bsr",
+  "/api/reverse-asin",
+  "/api/keywords/suggest",
+  "/api/credits",
+]);
+app.use("*", async (c, next) => {
+  if (PROTECTED_PATHS.has(c.req.path) && !c.var.userId) {
+    return c.json({ error: "Sign in to continue", code: "UNAUTHENTICATED" as const }, 401);
+  }
+  return next();
+});
+
 app.get("/api/health", (c) => c.json({ ok: true, env: c.env.ENVIRONMENT }));
+
+// Current credit balance for the signed-in user. Provisions the free signup
+// grant on first read (self-heals when the webhook hasn't landed / isn't set up).
+app.get("/api/credits", async (c) => {
+  const credits = await getBalance(c.env, c.var.userId!);
+  return c.json({ credits } satisfies CreditBalance);
+});
 
 /**
  * ⚠️ AUTH + CREDITS ARE OFF for this stand-up (decided 2026-07-18): the goal is
@@ -383,8 +413,35 @@ app.post("/api/reverse-asin", async (c) => {
   return c.json(payload);
 });
 
-// --- Webhooks (kept for when auth returns; no-ops for now) ---
-app.post("/api/webhooks/clerk", (c) => c.json({ received: true }));
+// --- Webhooks ---
+// Clerk user lifecycle → provision users + grant free credits. Verified via the
+// Svix signature (verifyWebhook), NOT a session — hence excluded from the auth
+// middleware above. Returns 501 until the signing secret is configured so a
+// misconfigured endpoint fails loudly rather than silently dropping grants.
+app.post("/api/webhooks/clerk", async (c) => {
+  if (!c.env.CLERK_WEBHOOK_SECRET) {
+    return c.json({ error: "Webhook signing secret not configured" }, 501);
+  }
+  let evt: Awaited<ReturnType<typeof verifyWebhook>>;
+  try {
+    evt = await verifyWebhook(c.req.raw, { signingSecret: c.env.CLERK_WEBHOOK_SECRET });
+  } catch {
+    return c.json({ error: "Signature verification failed" }, 400);
+  }
+
+  if (evt.type === "user.created" || evt.type === "user.updated") {
+    const { id, email_addresses, primary_email_address_id } = evt.data;
+    const email =
+      email_addresses.find((e) => e.id === primary_email_address_id)?.email_address ??
+      email_addresses[0]?.email_address;
+    await grantSignupCredits(c.env, id, email);
+  } else if (evt.type === "user.deleted" && evt.data.id) {
+    await removeUser(c.env, evt.data.id);
+  }
+
+  return c.json({ received: true });
+});
+
 app.post("/api/webhooks/stripe", (c) => c.json({ received: true }));
 
 export default {

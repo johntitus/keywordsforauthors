@@ -25,6 +25,28 @@ export class CreditLedger extends DurableObject<Env> {
   }
 
   /**
+   * Grant `amount` exactly once per `key`. Used for the signup grant so that a
+   * retried webhook AND a lazy first-read (see credits.ts) can both call it
+   * without ever double-granting. `granted` tells the caller whether this call
+   * was the one that actually applied the credits (so it can write the ledger
+   * row / backfill projections only once).
+   */
+  async grantOnce(amount: number, key: string): Promise<{ credits: number; granted: boolean }> {
+    const seen = `granted:${key}`;
+    if ((await this.ctx.storage.get<number>(seen)) !== undefined) {
+      return { credits: await this.balance(), granted: false };
+    }
+    const next = (await this.balance()) + amount;
+    await this.ctx.storage.put({ credits: next, [seen]: amount });
+    return { credits: next, granted: true };
+  }
+
+  /** Wipe this user's ledger (on account deletion). */
+  async reset(): Promise<void> {
+    await this.ctx.storage.deleteAll();
+  }
+
+  /**
    * Atomically spend `amount` credits if the same idempotencyKey hasn't already
    * been charged. Returns the outcome so the caller can 402 on insufficient
    * funds. Re-issuing the same key (a retried/double-clicked request) is a no-op
