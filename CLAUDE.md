@@ -283,11 +283,12 @@ landing/          Standalone static marketing landing page (index.html, Tailwind
 
 **Scaffold status: live data; auth ON, credit deduction ON (Stripe OFF).** DataForSEO + RapidAPI HTTP calls and KV caching are implemented and working across search / deep-dive / reverse-asin. **D1 is wired** for the keyword-autosuggest dictionary AND the users/credits projection. **Clerk auth is ON** (tools gated, 50 free credits on signup) and **credits are now SPENT per action** (flat 1 each; see 2026-07-19c/d + 2026-07-20 session logs). The only thing not wired is buying more (Stripe). The flow (validate → cache → fetch → cache) is implemented end-to-end for `/api/search` as the reference pattern.
 
-### ⭐ What's next (as of 2026-07-20, in dependency order)
+### ⭐ What's next (as of 2026-07-20, priority order — decided this session)
 
-1. **Stripe Checkout** — the money loop's last piece. Credit packs (`CREDIT_PACKS`) → Stripe Checkout → `/api/webhooks/stripe` (currently a stub) grants purchased credits via the same idempotent DO path (`grantOnce`/`grant`). Then wire an "out of credits" → buy CTA (the SPA already surfaces the 402 `INSUFFICIENT_CREDITS`).
-2. **Production Clerk + deploy** — prod instance, `wrangler secret put CLERK_SECRET_KEY`/`CLERK_PUBLISHABLE_KEY`/`CLERK_WEBHOOK_SECRET`, real webhook endpoint in the Dashboard; plus the still-pending `wrangler d1 create` + `kv namespace create` + `db:migrate:remote`.
-3. **Backlog:** `keyword_snapshots` §5 trend writes + the monthly cron refresh; the Niche Finder + BSR-history idea (memory `niche-finder-and-bsr-history-idea`); product items in `TODO.md`.
+1. **Admin tools** — email-allowlisted admin surface: list users + credit balances, grant gratis credits (the DO's `grant()` already exists). See `TODO.md` "Admin tools" + memory `admin-tools-backlog`. Build locally first.
+2. **Deploy to Cloudflare for a free feedback beta** — decisions locked: **open signup** (accepts the API-spend risk) + **dev Clerk instance on `*.workers.dev`** (no custom domain yet). Provision `wrangler d1 create` + `kv namespace create` → real IDs in wrangler.toml → `db:migrate:remote`; `wrangler secret put` the DataForSEO/RapidAPI/Clerk keys; serve the SPA as static assets from the same Worker (same-origin). See memory `deploy-beta-plan`.
+3. **Stripe Checkout** — the money loop's last piece. Credit packs (`CREDIT_PACKS`) → Stripe Checkout → `/api/webhooks/stripe` (stub) grants purchased credits via the idempotent DO path. Then an "out of credits" → buy CTA (SPA already surfaces the 402). Also: production Clerk + custom domain before real launch.
+4. **Backlog:** `keyword_snapshots` §5 trend writes + the monthly cron refresh; the search-events/usage-analytics log; the Niche Finder + BSR-history idea; product items in `TODO.md`.
 
 ### Dev commands
 
