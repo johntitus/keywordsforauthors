@@ -1,4 +1,5 @@
 import type { BookFormatFilter, SerpBook } from "@kfa/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
@@ -142,6 +143,7 @@ export function DeepDivePage() {
   const [error, setError] = useState("");
   const [totalResults, setTotalResults] = useState<number | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const queryClient = useQueryClient();
   const [sort, setSort] = useState(DIVE_DEFAULT_SORT);
   // ASINs the user has ticked to send to Reverse ASIN (capped at the tool's max of 10).
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -240,8 +242,10 @@ export function DeepDivePage() {
     setSort(DIVE_DEFAULT_SORT);
     setSelected(new Set());
     try {
-      // Phase 1 - search.
+      // Phase 1 - search. This is the charged call (phase-2 BSR is free), so
+      // refresh the nav balance pill once it succeeds.
       const res = await api.deepDive(v, fmt, 30);
+      queryClient.invalidateQueries({ queryKey: ["credits"] });
       const initial: Row[] = res.books.map((b) => ({ ...b, pending: true }));
       setRows(initial);
       setTotalResults(res.totalResults);

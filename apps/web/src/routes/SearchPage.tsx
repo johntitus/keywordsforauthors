@@ -1,5 +1,5 @@
 import { RELEVANCE_ORDER, relevanceTier, type KeywordRow, type RelevanceTier } from '@kfa/shared';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
@@ -83,7 +83,12 @@ export function SearchPage() {
     max: '',
   });
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const search = useMutation({ mutationFn: (kw: string) => api.search(kw) });
+  const queryClient = useQueryClient();
+  const search = useMutation({
+    mutationFn: (kw: string) => api.search(kw),
+    // A search spends a credit — refresh the nav balance pill.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['credits'] }),
+  });
 
   // Reset sort + filters whenever a new result arrives.
   useEffect(() => {
@@ -411,7 +416,7 @@ export function SearchPage() {
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() =>
-                        navigate(`/deep-dive?keyword=${encodeURIComponent(k.keyword)}`)
+                        navigate(`/competitors?keyword=${encodeURIComponent(k.keyword)}`)
                       }
                       className="whitespace-nowrap rounded-full border border-clay/25 bg-clay-tint px-3 py-1 font-mono text-xs text-clay-dark transition-colors hover:bg-clay hover:text-white"
                     >

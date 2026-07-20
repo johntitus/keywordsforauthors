@@ -47,27 +47,53 @@ export class CreditLedger extends DurableObject<Env> {
   }
 
   /**
-   * Atomically spend `amount` credits if the same idempotencyKey hasn't already
-   * been charged. Returns the outcome so the caller can 402 on insufficient
-   * funds. Re-issuing the same key (a retried/double-clicked request) is a no-op
-   * that reports the already-charged result.
+   * Atomically spend `amountEach` credits for each NOT-yet-charged key, all-or-
+   * nothing against the balance. Each key is an idempotency unit — a distinct
+   * chargeable action (a search, a deep dive, a single reverse-ASIN). Keys already
+   * charged are skipped for free (a retry / double-click / repeat), so re-issuing
+   * the same keys never double-spends. `chargedKeys` reports exactly which keys
+   * this call debited, so the caller can refund precisely those on failure.
+   *
+   * A single-unit action (search / deep dive) just passes a one-element array.
+   * `ok: false` means the balance couldn't cover the uncharged keys — nothing is
+   * debited and the caller should 402.
    */
-  async spend(
-    amount: number,
-    idempotencyKey: string,
-  ): Promise<{ ok: boolean; credits: number; alreadyCharged: boolean }> {
-    const seenKey = `spent:${idempotencyKey}`;
-    const already = await this.ctx.storage.get<number>(seenKey);
-    if (already !== undefined) {
-      return { ok: true, credits: await this.balance(), alreadyCharged: true };
+  async spendBatch(
+    keys: string[],
+    amountEach: number,
+  ): Promise<{ ok: boolean; credits: number; chargedKeys: string[] }> {
+    const balance = await this.balance();
+    const toCharge: string[] = [];
+    for (const k of keys) {
+      if ((await this.ctx.storage.get<number>(`spent:${k}`)) === undefined) toCharge.push(k);
     }
-    const current = await this.balance();
-    if (current < amount) {
-      return { ok: false, credits: current, alreadyCharged: false };
+    if (toCharge.length === 0) return { ok: true, credits: balance, chargedKeys: [] };
+
+    const cost = toCharge.length * amountEach;
+    if (balance < cost) return { ok: false, credits: balance, chargedKeys: [] };
+
+    // One transaction: decrement + record every idempotency marker together.
+    const write: Record<string, number> = { credits: balance - cost };
+    for (const k of toCharge) write[`spent:${k}`] = amountEach;
+    await this.ctx.storage.put(write);
+    return { ok: true, credits: balance - cost, chargedKeys: toCharge };
+  }
+
+  /**
+   * Reverse a prior spend for the given keys (on action failure). Only keys that
+   * were actually charged are credited back and cleared, so a re-run can charge
+   * again. Pass the `chargedKeys` returned by `spendBatch`.
+   */
+  async refundBatch(keys: string[], amountEach: number): Promise<{ credits: number }> {
+    const balance = await this.balance();
+    const toRefund: string[] = [];
+    for (const k of keys) {
+      if ((await this.ctx.storage.get<number>(`spent:${k}`)) !== undefined) toRefund.push(k);
     }
-    const next = current - amount;
-    // Single transaction: decrement + record the idempotency marker together.
-    await this.ctx.storage.put({ credits: next, [seenKey]: amount });
-    return { ok: true, credits: next, alreadyCharged: false };
+    if (toRefund.length === 0) return { credits: balance };
+    const next = balance + toRefund.length * amountEach;
+    await this.ctx.storage.put({ credits: next });
+    await this.ctx.storage.delete(toRefund.map((k) => `spent:${k}`));
+    return { credits: next };
   }
 }

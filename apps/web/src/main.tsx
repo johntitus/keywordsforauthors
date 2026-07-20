@@ -35,7 +35,7 @@ const router = createBrowserRouter([
         element: <ProtectedRoute />,
         children: [
           { path: "search", element: <SearchPage /> },
-          { path: "deep-dive", element: <DeepDivePage /> },
+          { path: "competitors", element: <DeepDivePage /> },
           { path: "reverse-asin", element: <ReverseAsinPage /> },
         ],
       },

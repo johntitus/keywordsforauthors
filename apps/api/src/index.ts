@@ -26,7 +26,7 @@ import { cors } from "hono/cors";
 import type { CreditBalance } from "@kfa/shared";
 import type { Env, Variables } from "./env.js";
 import { attachUser } from "./auth.js";
-import { getBalance, grantSignupCredits, removeUser } from "./credits.js";
+import { chargeCredits, getBalance, grantSignupCredits, removeUser } from "./credits.js";
 import { fetchRankedKeywords, fetchRelatedKeywords } from "./dataforseo.js";
 import { rapidBsr, rapidSearch } from "./rapidapi.js";
 import { getDb } from "./db/client.js";
@@ -95,6 +95,10 @@ app.get("/api/credits", async (c) => {
  */
 
 const TTL_30_DAYS = 60 * 60 * 24 * 30; // KV TTL = trend cadence knob (brief §5)
+
+// 402 body when a signed-in user can't cover an action. No buy-flow yet (Stripe
+// deferred), so the message just informs.
+const OUT_OF_CREDITS = { error: "You're out of credits.", code: "INSUFFICIENT_CREDITS" as const };
 
 type CachedRanked = { keywords: RankedKeyword[]; title: string | null; imageUrl: string | null };
 
@@ -239,6 +243,14 @@ app.post("/api/search", async (c) => {
     return c.json({ error: "Invalid input", code: "INVALID_INPUT" }, 400);
   }
   const { keyword } = parsed.data;
+  const userId = c.var.userId!;
+
+  // Charge 1 credit (flat, 2026-07-20). Idempotent per (user, keyword): cache hits
+  // and repeats are free after the first paid search, and a failed fetch leaves the
+  // cache empty so a retry re-runs for free. Charged on cache hits too (brief §5).
+  const charge = await chargeCredits(c.env, userId, [`search:${userId}:${keyword}`], "search");
+  if (!charge.ok) return c.json(OUT_OF_CREDITS, 402);
+
   // v7: + seed-level indexed-results count (2026-07-19).
   const cacheKey = `search:v7:${keyword}`; // (seed, location, depth, ignore_synonyms)
 
@@ -340,6 +352,14 @@ app.post("/api/deep-dive", async (c) => {
     return c.json({ error: "Invalid input", code: "INVALID_INPUT" }, 400);
   }
   const { keyword, format, limit } = parsed.data;
+  const userId = c.var.userId!;
+
+  // Charge 1 credit for the deep dive — keyed on the keyword only, so switching
+  // formats doesn't re-charge (idempotent per user+keyword). Phase-2 BSR
+  // enrichment (/api/deep-dive/bsr) is part of this same action and is NOT charged.
+  const charge = await chargeCredits(c.env, userId, [`deep_dive:${userId}:${keyword}`], "deep_dive");
+  if (!charge.ok) return c.json(OUT_OF_CREDITS, 402);
+
   // v2: ebook/audiobook now search the Kindle/Audible department + paginate to fill.
   const cacheKey = `deepdive:v2:${keyword}:${format}:${limit}`;
 
@@ -386,6 +406,18 @@ app.post("/api/reverse-asin", async (c) => {
     return c.json({ error: "Invalid input", code: "INVALID_INPUT" }, 400);
   }
   const { asins } = parsed.data;
+  const userId = c.var.userId!;
+
+  // Charge 1 credit PER ASIN, all-or-nothing. Idempotent per (user, ASIN): ASINs
+  // this user has already reversed are free to re-run, so a batch only charges for
+  // the not-yet-seen ones.
+  const charge = await chargeCredits(
+    c.env,
+    userId,
+    asins.map((a) => `reverse_asin:${userId}:${a}`),
+    "reverse_asin",
+  );
+  if (!charge.ok) return c.json(OUT_OF_CREDITS, 402);
 
   let costUsd = 0;
   const results = [];
@@ -399,7 +431,8 @@ app.post("/api/reverse-asin", async (c) => {
     results.push({ asin, title, imageUrl, keywords: keywords.filter((k) => !isNeverShow(k.keyword)), cached });
   }
 
-  const payload: ReverseAsinResult = { results, costUsd, creditsSpent: asins.length };
+  // Credits actually spent = newly-charged ASINs (already-reversed ones were free).
+  const payload: ReverseAsinResult = { results, costUsd, creditsSpent: charge.chargedKeys.length };
   // Feed the autosuggest dictionary: the keywords these books rank for are real
   // Amazon keywords with volumes — exactly the corpus the typeahead wants.
   c.executionCtx.waitUntil(

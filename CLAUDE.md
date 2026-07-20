@@ -46,6 +46,43 @@ blocklist, and shows the seed's competitor (indexed-results) count. See memory
 `zero-volume-trust-problem` for the load-bearing details and `TODO.md` for deferred follow-ups
 (per-keyword indexed counts, search Filters/Options panel, junk-keyword filtering).
 
+## Session log — 2026-07-20 (credit deduction ON + homepage logo)
+
+**Deduction (flat 1 credit each, decided this session; Stripe still deferred).** Verified live with a
+minted session JWT: search 50→49 and idempotent repeat 49→49; reverse-ASIN 3 ASINs 49→46 and repeat
+`creditsSpent=0`; D1 `users.credits`=46 and `credit_transactions` = signup+50 / search−1 / reverse×−1.
+
+- **`CreditLedger`:** replaced the single `spend` with **`spendBatch(keys, amountEach)`** +
+  **`refundBatch`**. Each key = one chargeable unit; charges only NOT-yet-charged keys, **all-or-
+  nothing** vs balance; returns `chargedKeys`. Idempotency marker `spent:<key>` persists (repeats free).
+- **`credits.ts`:** `chargeCredits(env, uid, keys, reason)` — **calls `grantSignupCredits` first**
+  (so a brand-new user who acts before the pill provisions them isn't falsely 402'd), then `spendBatch`;
+  best-effort mirrors the debit into D1 `users` + one `credit_transactions` row per key. `refundCharge`
+  staged (unused — see below). `CREDIT_COSTS` in shared constants.
+- **Charging model — charge UP FRONT, NO refund-on-failure.** Idempotency makes this safe: a failed
+  fetch leaves the KV cache empty, so a retry is `alreadyCharged` → **free** and completes. Only a
+  *permanently* failing keyword would cost 1 credit (≈never). So `refundBatch`/`refundCharge` are kept
+  as **staged utilities** (for Stripe refunds / an explicit failure-refund toggle), not wired.
+- **Idempotency keys (per user, charge once ever):** search `search:<uid>:<kw>`; deep dive
+  `deep_dive:<uid>:<kw>` (**keyword-only — switching formats does NOT re-charge**; phase-2
+  `/api/deep-dive/bsr` is part of the same action and is **not charged**); reverse `reverse_asin:<uid>:<asin>`
+  (per ASIN — a batch charges only new ASINs; `creditsSpent` = `chargedKeys.length`). Charged on cache
+  hits too (brief §5). **The suggest endpoint is gated but NOT charged** (typeahead).
+- **402:** `chargeCredits` false ⇒ `{error, code:INSUFFICIENT_CREDITS}` 402. SPA `lib/api.ts` now throws
+  an **`ApiError`** carrying `status`+`code`; the existing per-tool error text shows the message.
+- **Pill refresh:** each tool invalidates `["credits"]` on success (Search mutation `onSuccess`; Deep
+  dive after the charged phase-1 call; Reverse in the result `useEffect`).
+
+**Branding + route rename:** the old `BrandMark` target-glyph is replaced everywhere (homepage
+header + footer, workbench `AppLayout` header) by the user's magnifier logo (`apps/web/src/logo2.svg`,
+chosen over `logo.svg`) via `<img>`; `BrandMark.tsx` deleted. ⚠️ The delivered SVGs relied on external
+CSS classes (`.big`/`.g`/`.h`) for their strokes — made **self-contained** (inline stroke `#c2673f`,
+`xmlns`) so they render standalone; `.svg` imports typed via `vite/client`. **Favicon:**
+`apps/web/public/favicon.svg` + `<link rel="icon" type="image/svg+xml">` in `index.html` (Vite copies
+`public/` to the build root). **Route rename:** the Competitors tool moved from `/deep-dive` →
+**`/competitors`** (main.tsx route, AppLayout tab, Search row button, homepage links). ⚠️ The **API
+endpoint stays `/api/deep-dive`** — only the SPA route changed. No redirect from the old path (dev-only).
+
 ## Session log — 2026-07-19d (gate the tools + grant free credits on signup)
 
 Built on 19c. Scope (user decision): wire the `user.created` webhook + gate the tools; **SKIP credit
@@ -234,14 +271,13 @@ landing/          Standalone static marketing landing page (index.html, Tailwind
                   Fonts (Poppins/JetBrains Mono via Google Fonts) are stand-ins for the design-tool fonts.
 ```
 
-**Scaffold status: live data; auth ON, credit deduction OFF.** DataForSEO + RapidAPI HTTP calls and KV caching are implemented and working across search / deep-dive / reverse-asin. **D1 is wired** for the keyword-autosuggest dictionary AND the users/credits projection. **Clerk auth is ON** (tools gated, 50 free credits granted on signup; see the 2026-07-19c/d session logs). The flow (validate → cache → fetch → cache) is implemented end-to-end for `/api/search` as the reference pattern.
+**Scaffold status: live data; auth ON, credit deduction ON (Stripe OFF).** DataForSEO + RapidAPI HTTP calls and KV caching are implemented and working across search / deep-dive / reverse-asin. **D1 is wired** for the keyword-autosuggest dictionary AND the users/credits projection. **Clerk auth is ON** (tools gated, 50 free credits on signup) and **credits are now SPENT per action** (flat 1 each; see 2026-07-19c/d + 2026-07-20 session logs). The only thing not wired is buying more (Stripe). The flow (validate → cache → fetch → cache) is implemented end-to-end for `/api/search` as the reference pattern.
 
-### ⭐ What's next (as of 2026-07-19d, in dependency order)
+### ⭐ What's next (as of 2026-07-20, in dependency order)
 
-1. **Credit deduction** — the only piece before the meter runs. Wire the (built-but-uncalled) `CreditLedger.spend` into each action (1/search, 1/deep-dive, 1/ASIN) with an idempotency key; 402 on insufficient funds; invalidate the `["credits"]` query so the nav pill updates. Enable `RECOVERY_*`-cost awareness (search is the expensive action — §10.2).
-2. **Stripe Checkout** — credit packs (`CREDIT_PACKS`) + `/api/webhooks/stripe` (currently a stub) to grant purchased credits. Closes the money loop.
-3. **Production Clerk + deploy** — prod instance, `wrangler secret put CLERK_SECRET_KEY`/`CLERK_PUBLISHABLE_KEY`/`CLERK_WEBHOOK_SECRET`, real webhook endpoint in the Dashboard; plus the still-pending `wrangler d1 create` + `kv namespace create` + `db:migrate:remote`.
-4. **Backlog (unrelated to auth):** `keyword_snapshots` §5 trend writes + the monthly cron refresh; product items in `TODO.md`.
+1. **Stripe Checkout** — the money loop's last piece. Credit packs (`CREDIT_PACKS`) → Stripe Checkout → `/api/webhooks/stripe` (currently a stub) grants purchased credits via the same idempotent DO path (`grantOnce`/`grant`). Then wire an "out of credits" → buy CTA (the SPA already surfaces the 402 `INSUFFICIENT_CREDITS`).
+2. **Production Clerk + deploy** — prod instance, `wrangler secret put CLERK_SECRET_KEY`/`CLERK_PUBLISHABLE_KEY`/`CLERK_WEBHOOK_SECRET`, real webhook endpoint in the Dashboard; plus the still-pending `wrangler d1 create` + `kv namespace create` + `db:migrate:remote`.
+3. **Backlog:** `keyword_snapshots` §5 trend writes + the monthly cron refresh; the Niche Finder + BSR-history idea (memory `niche-finder-and-bsr-history-idea`); product items in `TODO.md`.
 
 ### Dev commands
 

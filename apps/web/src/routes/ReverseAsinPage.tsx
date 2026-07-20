@@ -1,5 +1,5 @@
 import type { ReverseAsinResult } from "@kfa/shared";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
@@ -165,6 +165,7 @@ export function ReverseAsinPage() {
     () => tokenize(params.get("asins") ?? "").filter((a) => ASIN_RE.test(a)),
     [params],
   );
+  const queryClient = useQueryClient();
   const reverse = useQuery({
     queryKey: ["reverse-asin", queryAsins.join(",")],
     queryFn: () => api.reverseAsin(queryAsins),
@@ -181,8 +182,10 @@ export function ReverseAsinPage() {
       setDraftFilters(EMPTY_DRAFT);
       setPlacement("all");
       setDraftPlacement("all");
+      // A reverse-ASIN run spends credits (1 per newly-seen ASIN) — refresh the pill.
+      queryClient.invalidateQueries({ queryKey: ["credits"] });
     }
-  }, [reverse.data]);
+  }, [reverse.data, queryClient]);
 
   const toggleExpanded = (keyword: string) =>
     setExpanded((prev) => {

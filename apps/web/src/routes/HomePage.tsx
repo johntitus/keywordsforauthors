@@ -1,6 +1,6 @@
 import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/react";
 import { Link } from "react-router-dom";
-import { BrandMark } from "../components/BrandMark.js";
+import logo from "../logo2.svg";
 
 /**
  * In-app home - a faithful React port of the marketing landing page
@@ -41,7 +41,7 @@ export function HomePage() {
       <header className="sticky top-0 z-30 border-b border-black/5 bg-cream/85 backdrop-blur">
         <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link to="/" className="flex items-center gap-2.5">
-            <BrandMark />
+            <img src={logo} alt="" className="h-7 w-7" />
             <span className="font-display text-lg font-bold text-ink">Keywords for Authors</span>
           </Link>
           <div className="hidden items-center gap-8 text-sm text-muted md:flex">
@@ -198,7 +198,7 @@ export function HomePage() {
 
               {/* Node: Deep dive */}
               <Link
-                to="/deep-dive"
+                to="/competitors"
                 className="absolute flex h-[118px] w-[118px] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border border-black/5 bg-white shadow-[0_10px_30px_-10px_rgba(44,39,35,0.25)] transition-transform hover:scale-105"
                 style={{ left: "75%", top: "66%" }}
               >
@@ -238,7 +238,7 @@ export function HomePage() {
           <div className="mt-10 grid gap-5 md:hidden">
             {[
               { n: "01", to: "/search", title: "Keyword Search", credit: "1 credit", blurb: "Start with a seed keyword. Get the related searches Amazon actually shows buyers, each with its US search volume." },
-              { n: "02", to: "/deep-dive", title: "Competitors", credit: "1 credit", blurb: "Pick a promising one. See who's on page one, how crowded it is, and whether it's really books ranking, or blank journals wearing a keyword." },
+              { n: "02", to: "/competitors", title: "Competitors", credit: "1 credit", blurb: "Pick a promising one. See who's on page one, how crowded it is, and whether it's really books ranking, or blank journals wearing a keyword." },
               { n: "03", to: "/reverse-asin", title: "Reverse ASIN", credit: "1 / ASIN", blurb: "Feed a competitor's book back in. Get the keywords that book actually ranks for, then seed a sharper search. One credit per ASIN you check." },
             ].map((s) => (
               <Link key={s.to} to={s.to} className="rounded-xl border border-black/5 bg-white p-6">
@@ -355,7 +355,7 @@ export function HomePage() {
         <div className="mx-auto grid max-w-6xl gap-8 px-6 py-14 md:grid-cols-[2fr_1fr_1fr_1fr]">
           <div>
             <div className="flex items-center gap-2.5">
-              <BrandMark className="h-5 w-5 text-clay" />
+              <img src={logo} alt="" className="h-5 w-5" />
               <span className="font-display text-lg font-bold text-ink">Keywords for Authors</span>
             </div>
             <p className="mt-3 max-w-xs leading-relaxed text-muted">

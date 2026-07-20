@@ -1,12 +1,12 @@
 import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/react";
 import { useEffect } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { BrandMark } from "../components/BrandMark.js";
 import { CreditBalance } from "../components/CreditBalance.js";
+import logo from "../logo2.svg";
 
 const tabs = [
   { to: "/search", label: "Keyword Search" },
-  { to: "/deep-dive", label: "Competitors" },
+  { to: "/competitors", label: "Competitors" },
   { to: "/reverse-asin", label: "Reverse ASIN" },
 ];
 
@@ -29,7 +29,7 @@ export function AppLayout() {
       <header className="sticky top-0 z-30 border-b border-black/5 bg-cream/85 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <NavLink to="/" className="flex items-center gap-2.5">
-            <BrandMark />
+            <img src={logo} alt="" className="h-7 w-7" />
             <span className="font-display text-lg font-bold text-ink">Keywords for Authors</span>
           </NavLink>
           <div className="flex items-center gap-1 sm:gap-2">
