@@ -2,6 +2,19 @@
 
 Deferred ideas captured so they aren't lost. Not committed to scope or timing.
 
+## Admin tools — DEFERRED (noted 2026-07-20)
+
+An **admin surface** gated to an **email allowlist** (starting with `john.titus@gmail.com`). v1:
+- **List users** with their **credit balances** (email, credits, signup date).
+- **Grant gratis credits** to any user (comps/support).
+
+Sketch: a `requireAdmin` middleware (like `requireUser` + an `ADMIN_EMAILS` env allowlist; **enforce
+server-side**, and note the session JWT doesn't carry email by default — fetch via the Clerk client or
+add it to the token claims). `GET /api/admin/users` reads the D1 `users` projection; `POST
+/api/admin/users/:id/grant` uses the DO's **existing `grant()`** + a `credit_transactions` row (new
+`reason: 'admin_grant'`). Admin-only `/admin` SPA route later; could ship API-first. Will accrete more
+(usage analytics, refunds, disable users). See memory `admin-tools-backlog`.
+
 ## Relevance sort for related keywords — DEFERRED (noted 2026-07-18)
 
 Sort/filter a Search's related keywords by **how many books actually rank for

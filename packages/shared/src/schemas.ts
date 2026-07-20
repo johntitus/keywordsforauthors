@@ -186,8 +186,8 @@ export const asinSchema = z
   .regex(/^[0-9A-Z]{10}$/, "Not a valid Amazon ASIN");
 
 export const reverseAsinInput = z.object({
-  // Batch: one credit per ASIN (brief §4). One task per ASIN under the hood.
-  // Capped at 10 to keep the per-run credit cost bounded.
+  // One task per ASIN under the hood, but billed as ONE credit for the whole action
+  // (flat, 2026-07-20). Capped at 10 to bound the underlying API cost per run.
   asins: z.array(asinSchema).min(1).max(10),
 });
 export type ReverseAsinInput = z.infer<typeof reverseAsinInput>;
@@ -219,6 +219,8 @@ export const reverseAsinResult = z.object({
     }),
   ),
   costUsd: z.number().nonnegative(),
+  // Flat 1 per reverse-ASIN action: 1 if this set was charged, 0 if within the
+  // free re-run window (2026-07-20 — was 1-per-ASIN).
   creditsSpent: z.number().int().nonnegative(),
 });
 export type ReverseAsinResult = z.infer<typeof reverseAsinResult>;

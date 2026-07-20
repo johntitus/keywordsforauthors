@@ -152,7 +152,7 @@ export function HomePage() {
             </p>
             <p className="absolute left-0 top-[320px] w-[240px] text-right leading-relaxed text-muted">
               Feed a competitor's book back in. Get the keywords that book actually ranks for, then
-              seed a sharper search. One credit per ASIN you check.
+              seed a sharper search.
             </p>
 
             <div className="absolute left-1/2 top-[80px] -translate-x-1/2" style={{ width: "520px", height: "470px" }}>
@@ -239,7 +239,7 @@ export function HomePage() {
             {[
               { n: "01", to: "/search", title: "Keyword Search", credit: "1 credit", blurb: "Start with a seed keyword. Get the related searches Amazon actually shows buyers, each with its US search volume." },
               { n: "02", to: "/competitors", title: "Competitors", credit: "1 credit", blurb: "Pick a promising one. See who's on page one, how crowded it is, and whether it's really books ranking, or blank journals wearing a keyword." },
-              { n: "03", to: "/reverse-asin", title: "Reverse ASIN", credit: "1 / ASIN", blurb: "Feed a competitor's book back in. Get the keywords that book actually ranks for, then seed a sharper search. One credit per ASIN you check." },
+              { n: "03", to: "/reverse-asin", title: "Reverse ASIN", credit: "1 credit", blurb: "Feed a competitor's book back in. Get the keywords that book actually ranks for, then seed a sharper search." },
             ].map((s) => (
               <Link key={s.to} to={s.to} className="rounded-xl border border-black/5 bg-white p-6">
                 <div className="flex items-center justify-between">

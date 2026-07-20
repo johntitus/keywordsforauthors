@@ -14,7 +14,7 @@ import { api } from "../lib/api.js";
 
 const ASIN_RE = /^[0-9A-Z]{10}$/;
 const norm = (t: string) => t.trim().toUpperCase();
-// Capped at 10: reverse-ASIN bills one credit per ASIN, so keep a run bounded.
+// Capped at 10 to bound the underlying API cost per run (billed a flat 1 credit).
 const tokenize = (raw: string) =>
   [...new Set(raw.split(/[\s,]+/).map(norm).filter(Boolean))].slice(0, 10);
 
@@ -182,7 +182,7 @@ export function ReverseAsinPage() {
       setDraftFilters(EMPTY_DRAFT);
       setPlacement("all");
       setDraftPlacement("all");
-      // A reverse-ASIN run spends credits (1 per newly-seen ASIN) — refresh the pill.
+      // A reverse-ASIN run spends a credit (flat 1 per action) — refresh the pill.
       queryClient.invalidateQueries({ queryKey: ["credits"] });
     }
   }, [reverse.data, queryClient]);
@@ -407,8 +407,7 @@ export function ReverseAsinPage() {
         </button>
       </form>
       <p className="mt-3 font-mono text-sm text-muted">
-        Press comma, space, or tab after each ASIN; enter runs the search. One credit per ASIN
-        (metering off for now).
+        Press comma, space, or tab after each ASIN; enter runs the search. One credit per search.
       </p>
 
       {reverse.isError && (

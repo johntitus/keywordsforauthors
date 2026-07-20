@@ -95,6 +95,16 @@ app.get("/api/credits", async (c) => {
  */
 
 const TTL_30_DAYS = 60 * 60 * 24 * 30; // KV TTL = trend cadence knob (brief §5)
+const TTL_3_DAYS = 60 * 60 * 24 * 3; // deep-dive KV TTL — competitor set shifts faster
+
+// Per-tool re-charge windows (ms) = that tool's cache TTL, so a repeat query is
+// free while it's still served from cache and charges again once we'd re-fetch
+// fresh data. Tie these to the SAME TTLs used for the KV puts below.
+const CHARGE_WINDOW_MS = {
+  search: TTL_30_DAYS * 1000,
+  deep_dive: TTL_3_DAYS * 1000,
+  reverse_asin: TTL_30_DAYS * 1000,
+};
 
 // 402 body when a signed-in user can't cover an action. No buy-flow yet (Stripe
 // deferred), so the message just informs.
@@ -245,10 +255,17 @@ app.post("/api/search", async (c) => {
   const { keyword } = parsed.data;
   const userId = c.var.userId!;
 
-  // Charge 1 credit (flat, 2026-07-20). Idempotent per (user, keyword): cache hits
-  // and repeats are free after the first paid search, and a failed fetch leaves the
-  // cache empty so a retry re-runs for free. Charged on cache hits too (brief §5).
-  const charge = await chargeCredits(c.env, userId, [`search:${userId}:${keyword}`], "search");
+  // Charge 1 credit (flat, 2026-07-20). Windowed per (user, keyword) = the search
+  // cache TTL (30d): re-runs are free while served from cache and charge again once
+  // we'd re-fetch fresh data. A failed fetch leaves the cache empty so a retry
+  // re-runs for free. Charged on cross-user cache hits too (brief §5).
+  const charge = await chargeCredits(
+    c.env,
+    userId,
+    [`search:${userId}:${keyword}`],
+    "search",
+    CHARGE_WINDOW_MS.search,
+  );
   if (!charge.ok) return c.json(OUT_OF_CREDITS, 402);
 
   // v7: + seed-level indexed-results count (2026-07-19).
@@ -355,9 +372,17 @@ app.post("/api/deep-dive", async (c) => {
   const userId = c.var.userId!;
 
   // Charge 1 credit for the deep dive — keyed on the keyword only, so switching
-  // formats doesn't re-charge (idempotent per user+keyword). Phase-2 BSR
-  // enrichment (/api/deep-dive/bsr) is part of this same action and is NOT charged.
-  const charge = await chargeCredits(c.env, userId, [`deep_dive:${userId}:${keyword}`], "deep_dive");
+  // formats doesn't re-charge. Windowed = the deep-dive cache TTL (3d, since the
+  // competitor set shifts fast): free re-runs for 3d, then charges on the fresh
+  // fetch. Phase-2 BSR enrichment (/api/deep-dive/bsr) is part of this same action
+  // and is NOT charged.
+  const charge = await chargeCredits(
+    c.env,
+    userId,
+    [`deep_dive:${userId}:${keyword}`],
+    "deep_dive",
+    CHARGE_WINDOW_MS.deep_dive,
+  );
   if (!charge.ok) return c.json(OUT_OF_CREDITS, 402);
 
   // v2: ebook/audiobook now search the Kindle/Audible department + paginate to fill.
@@ -376,8 +401,9 @@ app.post("/api/deep-dive", async (c) => {
 
   const { books, returned, totalResults } = await rapidSearch(c.env, keyword, format, limit);
   const result: DeepDiveResult = { keyword, format, books, returned, totalResults, cached: false };
-  // Short TTL: the competitor set shifts faster than keyword volumes.
-  await c.env.CACHE.put(cacheKey, JSON.stringify(result), { expirationTtl: 60 * 60 * 24 * 3 });
+  // Short TTL: the competitor set shifts faster than keyword volumes. Same value
+  // anchors the deep-dive re-charge window (CHARGE_WINDOW_MS.deep_dive).
+  await c.env.CACHE.put(cacheKey, JSON.stringify(result), { expirationTtl: TTL_3_DAYS });
   return c.json(result);
 });
 
@@ -408,15 +434,13 @@ app.post("/api/reverse-asin", async (c) => {
   const { asins } = parsed.data;
   const userId = c.var.userId!;
 
-  // Charge 1 credit PER ASIN, all-or-nothing. Idempotent per (user, ASIN): ASINs
-  // this user has already reversed are free to re-run, so a batch only charges for
-  // the not-yet-seen ones.
-  const charge = await chargeCredits(
-    c.env,
-    userId,
-    asins.map((a) => `reverse_asin:${userId}:${a}`),
-    "reverse_asin",
-  );
+  // Charge 1 credit for the whole reverse-ASIN action (flat, like search/deep-dive;
+  // decided 2026-07-20 — simpler to intuit than per-ASIN, and popular ASINs warm the
+  // per-ASIN cache anyway). Keyed on the sorted ASIN SET and windowed = the reverse
+  // cache TTL (30d), so re-running the same set within the window is free. (Each
+  // ASIN is still cached individually below — only the CHARGE is flat.)
+  const setKey = `reverse_asin:${userId}:${[...asins].sort().join(",")}`;
+  const charge = await chargeCredits(c.env, userId, [setKey], "reverse_asin", CHARGE_WINDOW_MS.reverse_asin);
   if (!charge.ok) return c.json(OUT_OF_CREDITS, 402);
 
   let costUsd = 0;
@@ -431,7 +455,7 @@ app.post("/api/reverse-asin", async (c) => {
     results.push({ asin, title, imageUrl, keywords: keywords.filter((k) => !isNeverShow(k.keyword)), cached });
   }
 
-  // Credits actually spent = newly-charged ASINs (already-reversed ones were free).
+  // 1 if this ASIN-set was charged, 0 if it was within the free re-run window.
   const payload: ReverseAsinResult = { results, costUsd, creditsSpent: charge.chargedKeys.length };
   // Feed the autosuggest dictionary: the keywords these books rank for are real
   // Amazon keywords with volumes — exactly the corpus the typeahead wants.

@@ -52,22 +52,32 @@ blocklist, and shows the seed's competitor (indexed-results) count. See memory
 minted session JWT: search 50→49 and idempotent repeat 49→49; reverse-ASIN 3 ASINs 49→46 and repeat
 `creditsSpent=0`; D1 `users.credits`=46 and `credit_transactions` = signup+50 / search−1 / reverse×−1.
 
-- **`CreditLedger`:** replaced the single `spend` with **`spendBatch(keys, amountEach)`** +
-  **`refundBatch`**. Each key = one chargeable unit; charges only NOT-yet-charged keys, **all-or-
-  nothing** vs balance; returns `chargedKeys`. Idempotency marker `spent:<key>` persists (repeats free).
-- **`credits.ts`:** `chargeCredits(env, uid, keys, reason)` — **calls `grantSignupCredits` first**
-  (so a brand-new user who acts before the pill provisions them isn't falsely 402'd), then `spendBatch`;
-  best-effort mirrors the debit into D1 `users` + one `credit_transactions` row per key. `refundCharge`
-  staged (unused — see below). `CREDIT_COSTS` in shared constants.
-- **Charging model — charge UP FRONT, NO refund-on-failure.** Idempotency makes this safe: a failed
-  fetch leaves the KV cache empty, so a retry is `alreadyCharged` → **free** and completes. Only a
-  *permanently* failing keyword would cost 1 credit (≈never). So `refundBatch`/`refundCharge` are kept
-  as **staged utilities** (for Stripe refunds / an explicit failure-refund toggle), not wired.
-- **Idempotency keys (per user, charge once ever):** search `search:<uid>:<kw>`; deep dive
-  `deep_dive:<uid>:<kw>` (**keyword-only — switching formats does NOT re-charge**; phase-2
-  `/api/deep-dive/bsr` is part of the same action and is **not charged**); reverse `reverse_asin:<uid>:<asin>`
-  (per ASIN — a batch charges only new ASINs; `creditsSpent` = `chargedKeys.length`). Charged on cache
-  hits too (brief §5). **The suggest endpoint is gated but NOT charged** (typeahead).
+- **`CreditLedger`:** replaced the single `spend` with **`spendBatch(keys, windowMs, now)`** +
+  **`refundBatch(keys)`**. Each key = one chargeable unit; charges only keys not charged **within the
+  last `windowMs`**, **all-or-nothing** vs balance; returns `chargedKeys`. The marker `spent:<key>` now
+  stores the **charge timestamp** (was a boolean); `now` is passed in so the DO reads no wall-clock.
+- **`credits.ts`:** `chargeCredits(env, uid, keys, reason, windowMs)` — **calls `grantSignupCredits`
+  first** (so a brand-new user who acts before the pill provisions them isn't falsely 402'd), then
+  `spendBatch`; best-effort mirrors the debit into D1 `users` + one `credit_transactions` row per key.
+  Ledger `idempotencyKey` = `spend:<key>:<now>` (timestamp included so a **windowed re-charge doesn't
+  collide** with the UNIQUE constraint). `refundCharge` staged (unused). `CREDIT_COSTS` in shared.
+- **Charging model — charge UP FRONT, NO refund-on-failure.** A failed fetch leaves the KV cache empty,
+  so a retry falls inside the window → **free** and completes. Only a *permanently* failing keyword
+  would cost 1 credit (≈never). `refundBatch`/`refundCharge` kept as **staged utilities** (Stripe
+  refunds / a failure-refund toggle), not wired.
+- **⭐ WINDOWED charging (2026-07-20, updated same day — NOT "once ever").** A repeat query is free while
+  it's still served from cache and **charges again once we'd re-fetch fresh data**. The window = that
+  tool's **cache TTL** (`CHARGE_WINDOW_MS` in index.ts, tied to the same TTL constants as the KV puts):
+  **search 30d, deep dive 3d, reverse-ASIN 30d.** Keys: `search:<uid>:<kw>`; `deep_dive:<uid>:<kw>`
+  (**keyword-only — format toggles don't re-charge**; phase-2 `/api/deep-dive/bsr` NOT charged);
+  reverse `reverse_asin:<uid>:<sorted-asins-joined>` — **a FLAT 1 credit for the whole action, keyed on
+  the sorted ASIN SET** (changed 2026-07-20 from 1-per-ASIN: simpler to intuit, and popular ASINs warm
+  the per-ASIN KV cache anyway; each ASIN is still cached individually, only the CHARGE is flat).
+  `creditsSpent` is 0 or 1. Cross-user cache hits still charge (brief §5). Suggest gated but NOT charged.
+  Now **every action = 1 credit** (the homepage's "every action is one credit" line is finally literal).
+  **To make a tool charge more often, shorten its cache TTL** (⚠️ that TTL is also the §5 trend-snapshot
+  cadence + margin lever — don't shorten blindly). Verified live: expired/ancient marker re-charges,
+  fresh one free within window; reverse 3 ASINs = 1 credit, reordered same set = free.
 - **402:** `chargeCredits` false ⇒ `{error, code:INSUFFICIENT_CREDITS}` 402. SPA `lib/api.ts` now throws
   an **`ApiError`** carrying `status`+`code`; the existing per-tool error text shows the message.
 - **Pill refresh:** each tool invalidates `["credits"]` on success (Search mutation `onSuccess`; Deep

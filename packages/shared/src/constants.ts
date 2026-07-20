@@ -52,13 +52,15 @@ export const RECOVERY_MAX_BOOKS = 8; // book competitors to actually reverse-ASI
 // a usable co-occurrence signal and still populates the per-ASIN KV cache, at ~half
 // the cold cost. Warm repeats stay cheap regardless (per-ASIN cache, brief §5).
 
-// Credit model (brief §4): every action = 1 credit; reverse ASIN = 1 per ASIN.
-// Flat pricing decided 2026-07-20 (don't price by underlying cost — eat the 6×
-// variance). One "chargeable unit" = 1 credit: search = 1 unit, deep dive = 1 unit,
-// reverse ASIN = 1 unit PER ASIN. Idempotency is per (user, action-input), so a
-// user is charged once per distinct search/deep-dive/ASIN and never re-charged for
-// refetches or repeats (which are cache-cheap for us anyway).
-export const CREDIT_COSTS = { search: 1, deep_dive: 1, reverse_asin_per_asin: 1 } as const;
+// Credit model (brief §4): EVERY action = 1 credit, flat (don't price by underlying
+// cost — eat the 6× variance). Decided 2026-07-20; reverse-ASIN went from per-ASIN
+// back to a flat 1-per-action (2026-07-20, easier to intuit; popular ASINs warm the
+// per-ASIN cache anyway). Charging is WINDOWED per (user, action-input): a repeat is
+// free while still served from cache and charges again once we'd re-fetch fresh data.
+// Window = each tool's cache TTL (CHARGE_WINDOW_MS in the Worker: search 30d, deep
+// dive 3d, reverse ASIN 30d — keyed on the sorted ASIN SET). Retries/double-clicks
+// fall inside the window ⇒ free; cross-user cache hits still charge (brief §5).
+export const CREDIT_COSTS = { search: 1, deep_dive: 1, reverse_asin: 1 } as const;
 
 export const FREE_SIGNUP_CREDITS = 50;
 

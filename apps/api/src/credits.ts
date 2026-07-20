@@ -74,23 +74,27 @@ export async function getBalance(env: Env, userId: string): Promise<number> {
 }
 
 /**
- * Charge 1 credit per key (flat pricing), all-or-nothing, skipping keys already
- * charged for this user (repeats/retries are free). Each key is a distinct
- * chargeable unit — a search, a deep dive, or one reverse-ASIN. Returns
- * `{ ok, credits, chargedKeys }`; `ok: false` ⇒ insufficient balance (caller 402s).
- * Best-effort mirrors the debit into the D1 projection + one ledger row per key.
+ * Charge 1 credit per key (flat pricing), all-or-nothing, skipping keys charged
+ * for this user **within the last `windowMs`** (repeats/retries inside the window
+ * are free; after it — once the cached result would be re-fetched — the same query
+ * charges again). Each key is a distinct chargeable unit — a search, a deep dive,
+ * or one reverse-ASIN. `windowMs` = the tool's cache TTL, so price tracks fresh
+ * fetches. Returns `{ ok, credits, chargedKeys }`; `ok: false` ⇒ insufficient
+ * balance (caller 402s). Best-effort mirrors the debit into D1 + a ledger row/key.
  */
 export async function chargeCredits(
   env: Env,
   userId: string,
   keys: string[],
   reason: string,
+  windowMs: number,
 ): Promise<{ ok: boolean; credits: number; chargedKeys: string[] }> {
   // Ensure the free signup grant exists before charging — a brand-new user might
   // hit an action before the nav pill's /api/credits call provisions them, and we
   // don't want a false "out of credits" on their very first search. Idempotent.
   await grantSignupCredits(env, userId);
-  const res = await ledgerStub(env, userId).spendBatch(keys, 1);
+  const now = Date.now();
+  const res = await ledgerStub(env, userId).spendBatch(keys, windowMs, now);
   if (res.ok && res.chargedKeys.length > 0) {
     try {
       const db = getDb(env);
@@ -103,7 +107,9 @@ export async function chargeCredits(
             userId,
             delta: -1,
             reason,
-            idempotencyKey: `spend:${k}`,
+            // Include `now` so a windowed re-charge of the same key doesn't collide
+            // with the unique constraint (each real charge is its own ledger row).
+            idempotencyKey: `spend:${k}:${now}`,
           })),
         )
         .onConflictDoNothing();
@@ -117,14 +123,10 @@ export async function chargeCredits(
 /** Reverse a charge (on action failure). Pass the `chargedKeys` from chargeCredits. */
 export async function refundCharge(env: Env, userId: string, keys: string[]): Promise<void> {
   if (keys.length === 0) return;
-  const res = await ledgerStub(env, userId).refundBatch(keys, 1);
+  const res = await ledgerStub(env, userId).refundBatch(keys);
   try {
     const db = getDb(env);
     await db.update(users).set({ credits: res.credits }).where(eq(users.id, userId));
-    // Clear the spend ledger rows so a later re-run can re-charge cleanly.
-    for (const k of keys) {
-      await db.delete(creditTransactions).where(eq(creditTransactions.idempotencyKey, `spend:${k}`));
-    }
   } catch {
     // D1 unprovisioned — DO refund already applied.
   }
