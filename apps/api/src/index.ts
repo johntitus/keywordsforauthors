@@ -36,6 +36,18 @@ export { CreditLedger } from "./credit-ledger.js";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+// Canonicalize on the apex: 301 www.keywordsforauthors.com → keywordsforauthors.com
+// (both are bound as custom domains in wrangler.toml). Runs before everything so
+// the redirect is cheap and applies to API + SPA + asset requests alike.
+app.use("*", async (c, next) => {
+  const url = new URL(c.req.url);
+  if (url.hostname === "www.keywordsforauthors.com") {
+    url.hostname = "keywordsforauthors.com";
+    return c.redirect(url.toString(), 301);
+  }
+  return next();
+});
+
 app.use("*", cors());
 
 // Verify the Clerk session (Bearer JWT from the SPA or a session cookie) and
@@ -44,6 +56,10 @@ app.use("*", cors());
 // signature, not a session. Also skips entirely when Clerk isn't configured yet
 // (no secret in .dev.vars) so the tools keep working during setup.
 app.use("*", async (c, next) => {
+  // Static assets + SPA client routes don't need auth — skip Clerk entirely so
+  // every HTML/asset load doesn't pay session verification (handled by the
+  // catch-all → ASSETS below).
+  if (!c.req.path.startsWith("/api/")) return next();
   if (c.req.path.startsWith("/api/webhooks/")) return next();
   if (!c.env.CLERK_SECRET_KEY) {
     c.set("userId", null);
@@ -52,6 +68,7 @@ app.use("*", async (c, next) => {
   return clerkMiddleware()(c, next);
 });
 app.use("*", async (c, next) => {
+  if (!c.req.path.startsWith("/api/")) return next();
   if (c.req.path.startsWith("/api/webhooks/")) return next();
   if (!c.env.CLERK_SECRET_KEY) return next(); // userId already null
   return attachUser(c, next);
@@ -500,6 +517,19 @@ app.post("/api/webhooks/clerk", async (c) => {
 });
 
 app.post("/api/webhooks/stripe", (c) => c.json({ received: true }));
+
+// --- SPA fallback ---
+// Any non-API path that didn't match a static asset is a client-side route
+// (e.g. /search, /competitors). Serve the built index.html through the ASSETS
+// binding, whose not_found_handling = "single-page-application" (wrangler.toml)
+// returns index.html so React Router can take over. Registered last so every
+// real /api route matches first. Unknown /api paths still 404 as JSON.
+app.all("*", (c) => {
+  if (c.req.path.startsWith("/api/")) {
+    return c.json({ error: "Not found", code: "NOT_FOUND" as const }, 404);
+  }
+  return c.env.ASSETS.fetch(c.req.raw);
+});
 
 export default {
   fetch: app.fetch,

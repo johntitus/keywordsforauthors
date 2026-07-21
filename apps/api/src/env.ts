@@ -5,6 +5,9 @@ export interface Env {
   DB: D1Database;
   CACHE: KVNamespace;
   CREDIT_LEDGER: DurableObjectNamespace<CreditLedger>;
+  // Static-asset binding — the built Vite SPA (see wrangler.toml [assets]). The
+  // catch-all route serves index.html through this for SPA client routing.
+  ASSETS: Fetcher;
 
   ENVIRONMENT: string;
 

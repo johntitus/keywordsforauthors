@@ -3,18 +3,37 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
+# --- Custom domains: apex serves the app; www is bound too so the Worker can
+# --- 301 it to the apex (redirect handled in index.ts). Wrangler provisions the
+# --- proxied DNS record + edge cert for each on deploy. Clerk's clerk./accounts.
+# --- subdomains are separate records and NOT routed here.
+routes = [
+  { pattern = "keywordsforauthors.com", custom_domain = true },
+  { pattern = "www.keywordsforauthors.com", custom_domain = true },
+]
+
 # --- D1: relational + snapshot table (TechStack.md). Snapshot rows written
 # --- only on real fetches, never cache hits (brief §5).
 [[d1_databases]]
 binding = "DB"
 database_name = "kfa-db"
-database_id = "REPLACE_WITH_D1_ID"   # `wrangler d1 create kfa-db`
+database_id = "f6ea9763-34bc-433b-bef9-fe673c2edb67"   # `wrangler d1 create kfa-db`
 migrations_dir = "drizzle"
 
 # --- KV: DataForSEO response cache on the §5 stable keys — the margin.
 [[kv_namespaces]]
 binding = "CACHE"
-id = "REPLACE_WITH_KV_ID"            # `wrangler kv namespace create CACHE`
+id = "56b89271ff1b4616a2434d9af814295c"            # `wrangler kv namespace create CACHE`
+
+# --- Static assets: the built Vite SPA, served same-origin from this Worker so
+# --- /api + the Clerk session share one domain (no CORS, no separate Pages origin).
+# --- Matched files (js/css/favicon) serve directly; unmatched paths fall through
+# --- to the Worker, whose catch-all serves index.html (SPA client routing) via the
+# --- ASSETS binding + not_found_handling below. Build apps/web BEFORE deploying.
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
 
 # --- Durable Object: race-free per-user credit deduction + idempotency (§8.2).
 [[durable_objects.bindings]]

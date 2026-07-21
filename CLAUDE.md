@@ -46,6 +46,33 @@ blocklist, and shows the seed's competitor (indexed-results) count. See memory
 `zero-volume-trust-problem` for the load-bearing details and `TODO.md` for deferred follow-ups
 (per-keyword indexed counts, search Filters/Options panel, junk-keyword filtering).
 
+## Session log — 2026-07-21 (DEPLOYED LIVE to Cloudflare — beta)
+
+**The app is live at https://keywordsforauthors.com** (app at the apex; `www` 301s to apex). One Worker
+(`kfa-api`) serves the SPA *and* the API same-origin. All three tools tested live and working. Full
+wiring in memory `deploy-beta-plan`. ⚠️ **Sign-ups are DISABLED in Clerk** (John, post-launch) until he
+announces the beta — re-enable in Clerk Restrictions before sharing.
+
+- **Same-origin SPA (NEW):** `apps/api/wrangler.toml` gained an `[assets]` block (`directory=../web/dist`,
+  `binding=ASSETS`, `not_found_handling=single-page-application`). `index.ts` ends with a catch-all:
+  non-`/api` paths → `c.env.ASSETS.fetch` (SPA fallback); unknown `/api/*` → JSON 404. Auth middleware
+  early-returns for non-`/api/` paths so asset loads skip Clerk. **`npm run deploy` (root) builds web
+  THEN `wrangler deploy`** — web must build first so `dist` exists for asset upload.
+- **Custom domains:** `wrangler.toml` `routes = [{apex},{www}]` with `custom_domain=true` — wrangler
+  auto-provisioned proxied DNS records + edge certs on deploy.
+- **www→apex 301:** a Cloudflare **Redirect Rule** (dashboard, NOT code) — needed because static asset
+  paths (incl. `/`) are served by the Assets layer and BYPASS the Worker, so the in-code `www` redirect
+  in index.ts (kept as a backup) can't catch them. Rule runs at the edge before assets.
+- **Provisioned:** D1 `kfa-db` + KV `CACHE` (real IDs now in wrangler.toml, committed — not secret),
+  remote-migrated; DO `CreditLedger` v1 + monthly cron deployed.
+- **Production Clerk:** new prod instance, `pk_live` baked into `apps/web/.env`, 5 verified CNAMEs
+  (DNS-only). Worker secrets set via `wrangler secret put`: DATAFORSEO ×2, RAPIDAPI, CLERK_SECRET_KEY
+  (sk_live), CLERK_PUBLISHABLE_KEY (pk_live), CLERK_WEBHOOK_SECRET.
+- **Webhook:** Clerk `user.created`/`updated`/`deleted` → `/api/webhooks/clerk`; verified (unsigned→400,
+  Clerk test→200). Lazy `/api/credits` first-read still grants the 50 credits as backup.
+- **Non-blocking:** `/api/health` still reports `env:"development"` (cosmetic `ENVIRONMENT` var); SPA
+  bundle 543KB/159KB gz (code-split later). **Next:** admin tools, then Stripe.
+
 ## Session log — 2026-07-20 (credit deduction ON + homepage logo)
 
 **Deduction (flat 1 credit each, decided this session; Stripe still deferred).** Verified live with a

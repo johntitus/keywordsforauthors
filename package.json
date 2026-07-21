@@ -18,6 +18,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "db:generate": "npm run db:generate --workspace @kfa/api",
+    "db:migrate:remote": "npm run db:migrate:remote --workspace @kfa/api",
+    "deploy": "npm run build --workspace @kfa/web && npm run deploy --workspace @kfa/api",
     "datavet": "node datavet/server.mjs"
   },
   "devDependencies": {
