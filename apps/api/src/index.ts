@@ -13,6 +13,8 @@ import {
   adminGrantInput,
   type AdminGrantResult,
   type AdminMeResult,
+  type AdminPopularResult,
+  type AdminRecentResult,
   type AdminUsersResult,
   type BsrResult,
   type DeepDiveResult,
@@ -39,6 +41,7 @@ import {
   listUsers,
   removeUser,
 } from "./credits.js";
+import { logSearchEvent, popularKeywords, recentEvents } from "./analytics.js";
 import { fetchRankedKeywords, fetchRelatedKeywords } from "./dataforseo.js";
 import { rapidBsr, rapidSearch } from "./rapidapi.js";
 import { getDb } from "./db/client.js";
@@ -173,6 +176,33 @@ app.post("/api/admin/users/:id/grant", async (c) => {
   }
   const credits = await adminGrant(c.env, userId, parsed.data.amount, parsed.data.reason);
   return c.json({ userId, credits } satisfies AdminGrantResult);
+});
+
+// Usage analytics: most-searched keywords over a window (default 7 days), with an
+// optional tool filter. `window` is in days (1/7/30…); capped to keep the scan sane.
+app.get("/api/admin/activity/popular", async (c) => {
+  const windowDays = Math.min(Math.max(Number(c.req.query("window")) || 7, 1), 90);
+  const t = c.req.query("tool");
+  const tool = t === "search" || t === "deep_dive" ? t : null;
+  try {
+    const keywords = await popularKeywords(c.env, windowDays, tool, Date.now());
+    return c.json({ windowDays, keywords } satisfies AdminPopularResult);
+  } catch (e) {
+    return c.json({ error: `Couldn't read activity: ${(e as Error).message}`, code: "DB_ERROR" as const }, 500);
+  }
+});
+
+// Usage analytics: recent individual searches (newest first), optionally scoped to
+// one user via ?user=<id> (drives the "search per user" view).
+app.get("/api/admin/activity/recent", async (c) => {
+  const userId = c.req.query("user") || undefined;
+  const limit = Math.min(Math.max(Number(c.req.query("limit")) || 200, 1), 500);
+  try {
+    const events = await recentEvents(c.env, { userId, limit });
+    return c.json({ events } satisfies AdminRecentResult);
+  } catch (e) {
+    return c.json({ error: `Couldn't read activity: ${(e as Error).message}`, code: "DB_ERROR" as const }, 500);
+  }
 });
 
 /**
@@ -357,6 +387,9 @@ app.post("/api/search", async (c) => {
   );
   if (!charge.ok) return c.json(OUT_OF_CREDITS, 402);
 
+  // Log the search for admin usage analytics (best-effort; hit or miss).
+  c.executionCtx.waitUntil(logSearchEvent(c.env, userId, "search", keyword).catch(() => {}));
+
   // v7: + seed-level indexed-results count (2026-07-19).
   const cacheKey = `search:v7:${keyword}`; // (seed, location, depth, ignore_synonyms)
 
@@ -473,6 +506,9 @@ app.post("/api/deep-dive", async (c) => {
     CHARGE_WINDOW_MS.deep_dive,
   );
   if (!charge.ok) return c.json(OUT_OF_CREDITS, 402);
+
+  // Log the competitors lookup for admin usage analytics (best-effort).
+  c.executionCtx.waitUntil(logSearchEvent(c.env, userId, "deep_dive", keyword).catch(() => {}));
 
   // v2: ebook/audiobook now search the Kindle/Audible department + paginate to fill.
   const cacheKey = `deepdive:v2:${keyword}:${format}:${limit}`;

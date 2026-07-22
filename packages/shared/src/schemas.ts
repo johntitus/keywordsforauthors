@@ -284,6 +284,44 @@ export const adminMeResult = z.object({
 });
 export type AdminMeResult = z.infer<typeof adminMeResult>;
 
+// ---------- Admin activity / usage analytics ----------
+
+// The keyword-bearing tools we log ("what are people searching for").
+export const searchTool = z.enum(["search", "deep_dive"]);
+export type SearchTool = z.infer<typeof searchTool>;
+
+// One row of the "popular keywords" aggregation: a keyword with its total event
+// count and how many distinct users searched it, over the chosen window.
+export const popularKeyword = z.object({
+  keyword: z.string(),
+  count: z.number().int(),
+  users: z.number().int(),
+});
+export type PopularKeyword = z.infer<typeof popularKeyword>;
+
+export const adminPopularResult = z.object({
+  windowDays: z.number().int(),
+  keywords: z.array(popularKeyword),
+});
+export type AdminPopularResult = z.infer<typeof adminPopularResult>;
+
+// One individual logged action, for the recent-activity feed. `email` is the
+// user's (via the D1 projection); `createdAt` is epoch millis.
+export const searchEvent = z.object({
+  id: z.number().int(),
+  userId: z.string(),
+  email: z.string().nullable(),
+  tool: z.string(),
+  keyword: z.string(),
+  createdAt: z.number().int(),
+});
+export type SearchEvent = z.infer<typeof searchEvent>;
+
+export const adminRecentResult = z.object({
+  events: z.array(searchEvent),
+});
+export type AdminRecentResult = z.infer<typeof adminRecentResult>;
+
 export const apiError = z.object({
   error: z.string(),
   code: z.enum([

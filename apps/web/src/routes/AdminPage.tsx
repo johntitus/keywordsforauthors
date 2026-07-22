@@ -1,12 +1,13 @@
 import type { AdminUser } from "@kfa/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { ApiError, api } from "../lib/api.js";
+import { Link } from "react-router-dom";
+import { api } from "../lib/api.js";
 
 /**
- * Admin surface (email-allowlisted; the /api/admin/* endpoints enforce it
- * server-side — this page just renders it). v1: list every user with their
- * credit balance + signup date, and grant gratis credits (comps/support).
+ * Admin → Users tab. Lists every user with their credit balance + signup date,
+ * grants gratis credits (comps/support), and links each user to their activity.
+ * Rendered inside AdminLayout, which owns the heading, tabs, and admin gate.
  */
 
 const fmtDate = (ms: number | null) =>
@@ -20,8 +21,6 @@ function GrantCell({ user }: { user: AdminUser }) {
   const grant = useMutation({
     mutationFn: (n: number) => api.admin.grant(user.id, n),
     onSuccess: () => {
-      // Refresh the list (this user's balance changed) and the nav pill in case
-      // an admin granted themselves.
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       queryClient.invalidateQueries({ queryKey: ["credits"] });
     },
@@ -73,27 +72,11 @@ export function AdminPage() {
     return q ? list.filter((u) => u.email.toLowerCase().includes(q) || u.id.includes(q)) : list;
   }, [usersQuery.data, filter]);
 
-  // A 403 from the users query means the signed-in user isn't an admin.
-  const forbidden = usersQuery.error instanceof ApiError && usersQuery.error.status === 403;
-  if (forbidden) {
-    return (
-      <section className="mx-auto mt-10 max-w-md rounded-2xl border border-black/5 bg-white/60 px-8 py-12 text-center shadow-sm">
-        <h1 className="font-display text-2xl font-bold text-ink">Not authorized</h1>
-        <p className="mt-3 text-sm text-muted">This area is for administrators only.</p>
-      </section>
-    );
-  }
-
   const total = usersQuery.data?.users.length ?? 0;
 
   return (
-    <section>
-      <h1 className="font-display text-3xl font-bold tracking-tight text-ink">Admin</h1>
-      <p className="mt-2 text-lg leading-relaxed text-muted">
-        Users and credit balances. Grant gratis credits for comps or support.
-      </p>
-
-      <div className="mt-6 flex flex-wrap items-center gap-3">
+    <div>
+      <div className="flex flex-wrap items-center gap-3">
         <input
           type="search"
           placeholder="Filter by email or user ID…"
@@ -111,25 +94,26 @@ export function AdminPage() {
         </button>
       </div>
 
-      {usersQuery.isError && !forbidden && (
+      {usersQuery.isError && (
         <p className="mt-4 text-sm text-clay-dark">{(usersQuery.error as Error).message}</p>
       )}
 
       {usersQuery.isLoading ? (
         <p className="mt-8 font-mono text-sm text-muted">Loading users…</p>
       ) : (
-        <div className="mt-8 rounded-2xl border border-black/5 bg-white shadow-[0_8px_40px_-16px_rgba(44,39,35,0.15)]">
+        <div className="mt-6 rounded-2xl border border-black/5 bg-white shadow-[0_8px_40px_-16px_rgba(44,39,35,0.15)]">
           <div className="border-b border-black/5 px-4 py-3 font-mono text-xs text-muted">
             {filter ? `${rows.length} of ${total}` : `${total}`} user{total === 1 ? "" : "s"}
           </div>
           <div className="overflow-x-auto rounded-b-2xl">
-            <table className="w-full min-w-[640px] text-[15px]">
+            <table className="w-full min-w-[720px] text-[15px]">
               <thead className="text-left font-mono text-[11px] uppercase tracking-widest text-muted/70">
                 <tr>
                   <th className="px-4 py-2.5 font-medium">Email</th>
                   <th className="px-4 py-2.5 font-medium">User ID</th>
                   <th className="px-4 py-2.5 text-right font-medium">Credits</th>
                   <th className="px-4 py-2.5 font-medium">Signed up</th>
+                  <th className="px-4 py-2.5 font-medium" />
                   <th className="px-4 py-2.5 text-right font-medium">Grant credits</th>
                 </tr>
               </thead>
@@ -141,13 +125,21 @@ export function AdminPage() {
                     <td className="px-4 py-3 text-right font-mono text-ink">{u.credits.toLocaleString()}</td>
                     <td className="px-4 py-3 font-mono text-xs text-muted">{fmtDate(u.createdAt)}</td>
                     <td className="px-4 py-3">
+                      <Link
+                        to={`/admin/activity?user=${encodeURIComponent(u.id)}`}
+                        className="whitespace-nowrap font-mono text-xs text-clay-dark hover:underline"
+                      >
+                        Activity →
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">
                       <GrantCell user={u} />
                     </td>
                   </tr>
                 ))}
                 {rows.length === 0 && (
                   <tr className="border-t border-black/5">
-                    <td colSpan={5} className="px-4 py-6 text-center font-mono text-sm text-muted">
+                    <td colSpan={6} className="px-4 py-6 text-center font-mono text-sm text-muted">
                       {total === 0 ? "No users yet." : "No users match that filter."}
                     </td>
                   </tr>
@@ -157,6 +149,6 @@ export function AdminPage() {
           </div>
         </div>
       )}
-    </section>
+    </div>
   );
 }

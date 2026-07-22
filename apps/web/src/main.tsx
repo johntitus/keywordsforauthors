@@ -5,6 +5,8 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import "./index.css";
 import { setTokenGetter } from "./lib/auth.js";
+import { AdminActivityPage } from "./routes/AdminActivityPage.js";
+import { AdminLayout } from "./routes/AdminLayout.js";
 import { AdminPage } from "./routes/AdminPage.js";
 import { AppLayout } from "./routes/AppLayout.js";
 import { DeepDivePage } from "./routes/DeepDivePage.js";
@@ -38,10 +40,17 @@ const router = createBrowserRouter([
           { path: "search", element: <SearchPage /> },
           { path: "competitors", element: <DeepDivePage /> },
           { path: "reverse-asin", element: <ReverseAsinPage /> },
-          // Admin is sign-in gated here (ProtectedRoute) and the /api/admin/*
-          // endpoints enforce the email allowlist; the page renders "Not
-          // authorized" for signed-in non-admins.
-          { path: "admin", element: <AdminPage /> },
+          // Admin is sign-in gated here (ProtectedRoute); AdminLayout adds the
+          // email-allowlist gate (via /api/admin/me) + the Users/Activity tabs,
+          // and the /api/admin/* endpoints enforce the allowlist server-side.
+          {
+            path: "admin",
+            element: <AdminLayout />,
+            children: [
+              { index: true, element: <AdminPage /> },
+              { path: "activity", element: <AdminActivityPage /> },
+            ],
+          },
         ],
       },
     ],

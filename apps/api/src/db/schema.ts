@@ -72,6 +72,29 @@ export const keywords = sqliteTable(
   (t) => [index("keyword_prefix_idx").on(t.keyword)],
 );
 
+// Usage-analytics log: one row per keyword-tool action (Search seed / Competitors
+// keyword), for the admin activity view ("what are people searching for", popular
+// this week, per-user). Best-effort write on every such action (hit or miss) —
+// distinct from `keywords` (a deduped dictionary) and `keyword_snapshots` (volume
+// trend). No FK to users so a logging hiccup can never block a search.
+export const searchEvents = sqliteTable(
+  "search_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: text("user_id").notNull(),
+    tool: text("tool").notNull(), // 'search' | 'deep_dive'
+    keyword: text("keyword").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (t) => [
+    index("search_events_created_idx").on(t.createdAt),
+    index("search_events_user_idx").on(t.userId),
+    index("search_events_keyword_idx").on(t.keyword),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type CreditTransaction = typeof creditTransactions.$inferSelect;

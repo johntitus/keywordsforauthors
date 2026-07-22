@@ -1,6 +1,8 @@
 import type {
   AdminGrantResult,
   AdminMeResult,
+  AdminPopularResult,
+  AdminRecentResult,
   AdminUsersResult,
   BookFormatFilter,
   BsrResult,
@@ -85,5 +87,13 @@ export const api = {
         amount,
         ...(reason ? { reason } : {}),
       }),
+    popular: (windowDays: number, tool?: "search" | "deep_dive") =>
+      get<AdminPopularResult>(
+        `/api/admin/activity/popular?window=${windowDays}${tool ? `&tool=${tool}` : ""}`,
+      ),
+    recent: (userId?: string, limit = 200) =>
+      get<AdminRecentResult>(
+        `/api/admin/activity/recent?limit=${limit}${userId ? `&user=${encodeURIComponent(userId)}` : ""}`,
+      ),
   },
 };
