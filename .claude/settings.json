@@ -32,10 +32,21 @@
       "Bash(git show*)",
       "Bash(git push*)",
       "Bash(lsof -i*)",
-      "Bash(kill *)"
+      "Bash(kill *)",
+      "Bash"
     ],
     "deny": [
-      "Bash(rm -rf *)"
+      "Bash(rm)",
+      "Bash(rm *)",
+      "Bash(rm -rf *)",
+      "Bash(rmdir)",
+      "Bash(rmdir *)",
+      "Bash(unlink *)",
+      "Bash(shred *)",
+      "Bash(git rm *)",
+      "Bash(git clean *)",
+      "Bash(find * -delete)",
+      "Bash(find * -exec rm *)"
     ]
   }
 }
