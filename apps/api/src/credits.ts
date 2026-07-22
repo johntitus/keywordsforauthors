@@ -1,5 +1,5 @@
-import { FREE_SIGNUP_CREDITS } from "@kfa/shared";
-import { eq } from "drizzle-orm";
+import { FREE_SIGNUP_CREDITS, type AdminUser } from "@kfa/shared";
+import { desc, eq } from "drizzle-orm";
 import { getDb } from "./db/client.js";
 import { creditTransactions, users } from "./db/schema.js";
 import type { Env } from "./env.js";
@@ -35,35 +35,37 @@ export async function grantSignupCredits(
 ): Promise<number> {
   const { credits, granted } = await ledgerStub(env, userId).grantOnce(FREE_SIGNUP_CREDITS, SIGNUP_KEY);
 
-  // Only touch D1 when there's something to write (first grant, or a real email
-  // to persist) — a plain balance read stays a single DO call.
-  if (granted || email != null) {
-    try {
-      const db = getDb(env);
+  // Ensure the D1 projection row exists on EVERY balance read — this is the
+  // "self-heals local dev / pre-webhook" path (see the module header), and it's
+  // what keeps the admin user list complete without a webhook tunnel. The upsert
+  // never clobbers a good email with "" (on conflict we only set email when we
+  // actually have one), so a later webhook still backfills it. One cheap D1
+  // upsert per read; the DO remains authoritative for the balance.
+  try {
+    const db = getDb(env);
+    await db
+      .insert(users)
+      .values({ id: userId, email: email ?? "", credits })
+      .onConflictDoUpdate({
+        target: users.id,
+        set: email != null ? { credits, email } : { credits },
+      });
+    if (granted) {
       await db
-        .insert(users)
-        .values({ id: userId, email: email ?? "", credits })
-        .onConflictDoUpdate({
-          target: users.id,
-          set: email != null ? { credits, email } : { credits },
-        });
-      if (granted) {
-        await db
-          .insert(creditTransactions)
-          .values({
-            id: crypto.randomUUID(),
-            userId,
-            delta: FREE_SIGNUP_CREDITS,
-            reason: "signup",
-            idempotencyKey: `signup:${userId}`,
-          })
-          .onConflictDoNothing();
-      }
-    } catch {
-      // D1 unprovisioned (placeholder id in wrangler.toml) — the DO still holds
-      // the authoritative balance, so the grant isn't lost. Projection catches
-      // up once D1 exists.
+        .insert(creditTransactions)
+        .values({
+          id: crypto.randomUUID(),
+          userId,
+          delta: FREE_SIGNUP_CREDITS,
+          reason: "signup",
+          idempotencyKey: `signup:${userId}`,
+        })
+        .onConflictDoNothing();
     }
+  } catch {
+    // D1 unprovisioned (placeholder id in wrangler.toml) — the DO still holds
+    // the authoritative balance, so the grant isn't lost. Projection catches
+    // up once D1 exists.
   }
   return credits;
 }
@@ -130,6 +132,79 @@ export async function refundCharge(env: Env, userId: string, keys: string[]): Pr
   } catch {
     // D1 unprovisioned — DO refund already applied.
   }
+}
+
+/**
+ * Admin: list all users from the D1 projection, newest first. The DO holds the
+ * authoritative balance, but the projection is what's queryable — normally in
+ * sync (every grant/spend writes both). `createdAt` → epoch millis for the wire.
+ */
+export async function listUsers(env: Env, limit = 500): Promise<AdminUser[]> {
+  const db = getDb(env);
+  const rows = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      credits: users.credits,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .orderBy(desc(users.createdAt))
+    .limit(limit);
+  return rows.map((r) => ({
+    id: r.id,
+    email: r.email,
+    credits: r.credits,
+    createdAt: r.createdAt ? r.createdAt.getTime() : null,
+  }));
+}
+
+/**
+ * Admin: persist a real email onto a user's D1 projection row. Used to heal rows
+ * that the lazy (pre-webhook) provisioning left with a blank email — the admin
+ * list looks them up from Clerk and writes them back so it's a one-time cost.
+ */
+export async function backfillUserEmail(env: Env, userId: string, email: string): Promise<void> {
+  if (!email) return;
+  try {
+    const db = getDb(env);
+    await db.update(users).set({ email }).where(eq(users.id, userId));
+  } catch {
+    // D1 unprovisioned — nothing to heal.
+  }
+}
+
+/**
+ * Admin: grant gratis credits to a user (comps/support). The CreditLedger DO is
+ * authoritative (`grant` adds to its balance); the D1 projection + a
+ * `credit_transactions` row mirror it best-effort. Not idempotent — each admin
+ * grant is a distinct movement, so the idempotency key is unique per call.
+ * Returns the new balance.
+ */
+export async function adminGrant(
+  env: Env,
+  userId: string,
+  amount: number,
+  reason = "admin_grant",
+): Promise<number> {
+  const credits = await ledgerStub(env, userId).grant(amount);
+  try {
+    const db = getDb(env);
+    await db.update(users).set({ credits }).where(eq(users.id, userId));
+    await db
+      .insert(creditTransactions)
+      .values({
+        id: crypto.randomUUID(),
+        userId,
+        delta: amount,
+        reason,
+        idempotencyKey: `admin_grant:${userId}:${crypto.randomUUID()}`,
+      })
+      .onConflictDoNothing();
+  } catch {
+    // D1 unprovisioned — the DO already recorded the authoritative grant.
+  }
+  return credits;
 }
 
 /** Remove a user on account deletion (best-effort projection + ledger wipe). */

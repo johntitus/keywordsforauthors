@@ -13,6 +13,9 @@ CLERK_PUBLISHABLE_KEY=""
 # Svix signing secret for the /api/webhooks/clerk endpoint (whsec_). Optional
 # until the user.created webhook is wired.
 CLERK_WEBHOOK_SECRET=""
+# Comma-separated allowlist of admin emails — gates the /api/admin/* surface.
+# Unset ⇒ admin is off (endpoints 403). In prod: wrangler secret put ADMIN_EMAILS
+ADMIN_EMAILS="john.titus@gmail.com"
 
 # Stripe
 STRIPE_SECRET_KEY=""

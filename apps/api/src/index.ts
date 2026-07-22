@@ -10,6 +10,10 @@ import {
   RELEVANCE_ORDER,
   isNeverShow,
   relevanceTier,
+  adminGrantInput,
+  type AdminGrantResult,
+  type AdminMeResult,
+  type AdminUsersResult,
   type BsrResult,
   type DeepDiveResult,
   type KeywordRow,
@@ -25,8 +29,16 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { CreditBalance } from "@kfa/shared";
 import type { Env, Variables } from "./env.js";
-import { attachUser } from "./auth.js";
-import { chargeCredits, getBalance, grantSignupCredits, removeUser } from "./credits.js";
+import { attachUser, requireAdmin } from "./auth.js";
+import {
+  adminGrant,
+  backfillUserEmail,
+  chargeCredits,
+  getBalance,
+  grantSignupCredits,
+  listUsers,
+  removeUser,
+} from "./credits.js";
 import { fetchRankedKeywords, fetchRelatedKeywords } from "./dataforseo.js";
 import { rapidBsr, rapidSearch } from "./rapidapi.js";
 import { getDb } from "./db/client.js";
@@ -94,6 +106,10 @@ app.use("*", async (c, next) => {
   return next();
 });
 
+// The admin surface is gated by the email allowlist (server-enforced). Mounted
+// as a group so the dynamic grant path (/users/:id/grant) is covered too.
+app.use("/api/admin/*", requireAdmin);
+
 app.get("/api/health", (c) => c.json({ ok: true, env: c.env.ENVIRONMENT }));
 
 // Current credit balance for the signed-in user. Provisions the free signup
@@ -101,6 +117,62 @@ app.get("/api/health", (c) => c.json({ ok: true, env: c.env.ENVIRONMENT }));
 app.get("/api/credits", async (c) => {
   const credits = await getBalance(c.env, c.var.userId!);
   return c.json({ credits } satisfies CreditBalance);
+});
+
+// --- Admin (email-allowlisted; requireAdmin mounted above) ---
+
+// Whoami: a 200 here is how the SPA learns the user is an admin (to reveal the
+// /admin route + nav link). Non-admins never reach this — requireAdmin 403s.
+app.get("/api/admin/me", (c) => c.json({ email: c.var.adminEmail! } satisfies AdminMeResult));
+
+// List users with their credit balances (the D1 projection). Rows whose email is
+// still blank (lazy provisioning had no session email, and no webhook ran) get a
+// one-time backfill from Clerk here — looked up by user ID and persisted, so the
+// list is readable locally and later loads don't re-hit Clerk.
+app.get("/api/admin/users", async (c) => {
+  try {
+    const users = await listUsers(c.env);
+    const blanks = users.filter((u) => !u.email);
+    if (blanks.length) {
+      const clerk = c.get("clerk");
+      await Promise.all(
+        blanks.map(async (u) => {
+          try {
+            const cu = await clerk.users.getUser(u.id);
+            const primary =
+              cu.emailAddresses.find((e) => e.id === cu.primaryEmailAddressId) ??
+              cu.emailAddresses[0];
+            const email = primary?.emailAddress ?? "";
+            if (email) {
+              u.email = email;
+              await backfillUserEmail(c.env, u.id, email);
+            }
+          } catch {
+            // User not found in this Clerk instance / API hiccup — leave blank.
+          }
+        }),
+      );
+    }
+    return c.json({ users } satisfies AdminUsersResult);
+  } catch (e) {
+    // Almost always D1 not migrated (run `npm run db:migrate:local` / `:remote`).
+    return c.json(
+      { error: `Couldn't read users: ${(e as Error).message}`, code: "DB_ERROR" as const },
+      500,
+    );
+  }
+});
+
+// Grant gratis credits to a user (comps/support). Uses the DO's grant() + a
+// mirrored credit_transactions row (reason 'admin_grant').
+app.post("/api/admin/users/:id/grant", async (c) => {
+  const userId = c.req.param("id");
+  const parsed = adminGrantInput.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json({ error: "Invalid input", code: "INVALID_INPUT" }, 400);
+  }
+  const credits = await adminGrant(c.env, userId, parsed.data.amount, parsed.data.reason);
+  return c.json({ userId, credits } satisfies AdminGrantResult);
 });
 
 /**

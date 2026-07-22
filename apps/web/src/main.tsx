@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import "./index.css";
 import { setTokenGetter } from "./lib/auth.js";
+import { AdminPage } from "./routes/AdminPage.js";
 import { AppLayout } from "./routes/AppLayout.js";
 import { DeepDivePage } from "./routes/DeepDivePage.js";
 import { HomePage } from "./routes/HomePage.js";
@@ -37,6 +38,10 @@ const router = createBrowserRouter([
           { path: "search", element: <SearchPage /> },
           { path: "competitors", element: <DeepDivePage /> },
           { path: "reverse-asin", element: <ReverseAsinPage /> },
+          // Admin is sign-in gated here (ProtectedRoute) and the /api/admin/*
+          // endpoints enforce the email allowlist; the page renders "Not
+          // authorized" for signed-in non-admins.
+          { path: "admin", element: <AdminPage /> },
         ],
       },
     ],

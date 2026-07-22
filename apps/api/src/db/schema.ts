@@ -26,7 +26,7 @@ export const creditTransactions = sqliteTable(
       .notNull()
       .references(() => users.id),
     delta: integer("delta").notNull(), // + grant/purchase, - spend
-    reason: text("reason").notNull(), // 'signup' | 'purchase' | 'search' | 'deep_dive' | 'reverse_asin'
+    reason: text("reason").notNull(), // 'signup' | 'purchase' | 'search' | 'deep_dive' | 'reverse_asin' | 'admin_grant'
     // Cost transparency (brief §10.2): log the real DataForSEO cost per action.
     apiCostUsd: real("api_cost_usd"),
     idempotencyKey: text("idempotency_key").unique(),

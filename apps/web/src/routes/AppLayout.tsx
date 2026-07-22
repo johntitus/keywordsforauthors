@@ -2,6 +2,7 @@ import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/react";
 import { useEffect } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { CreditBalance } from "../components/CreditBalance.js";
+import { useIsAdmin } from "../lib/useIsAdmin.js";
 import logo from "../logo2.svg";
 
 const tabs = [
@@ -17,11 +18,13 @@ const tabs = [
  */
 export function AppLayout() {
   const { pathname } = useLocation();
+  const { isAdmin } = useIsAdmin();
 
   // Reflect the active tool in the tab title, e.g. "Reverse ASIN - Keywords for Authors".
   useEffect(() => {
     const active = tabs.find((t) => pathname.startsWith(t.to));
-    document.title = active ? `${active.label} - Keywords for Authors` : "Keywords for Authors";
+    const label = active?.label ?? (pathname.startsWith("/admin") ? "Admin" : null);
+    document.title = label ? `${label} - Keywords for Authors` : "Keywords for Authors";
   }, [pathname]);
 
   return (
@@ -50,6 +53,21 @@ export function AppLayout() {
                   {t.label}
                 </NavLink>
               ))}
+              {isAdmin && (
+                <NavLink
+                  to="/admin"
+                  className={({ isActive }) =>
+                    [
+                      "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:px-4 sm:py-2",
+                      isActive
+                        ? "bg-clay-tint text-clay-dark"
+                        : "text-muted hover:bg-black/5 hover:text-ink",
+                    ].join(" ")
+                  }
+                >
+                  Admin
+                </NavLink>
+              )}
             </nav>
             <div className="ml-1 flex items-center gap-2 border-l border-black/10 pl-2 sm:ml-2 sm:pl-3">
               <Show when="signed-out">

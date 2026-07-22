@@ -1,4 +1,7 @@
 import type {
+  AdminGrantResult,
+  AdminMeResult,
+  AdminUsersResult,
   BookFormatFilter,
   BsrResult,
   CreditBalance,
@@ -72,4 +75,15 @@ export const api = {
     get<KeywordSuggestResult>(`/api/keywords/suggest?q=${encodeURIComponent(q)}`),
 
   credits: () => get<CreditBalance>("/api/credits"),
+
+  admin: {
+    // 200 ⇒ the signed-in user is an admin; 403 (ApiError) ⇒ not.
+    me: () => get<AdminMeResult>("/api/admin/me"),
+    users: () => get<AdminUsersResult>("/api/admin/users"),
+    grant: (userId: string, amount: number, reason?: string) =>
+      post<AdminGrantResult>(`/api/admin/users/${encodeURIComponent(userId)}/grant`, {
+        amount,
+        ...(reason ? { reason } : {}),
+      }),
+  },
 };

@@ -247,6 +247,43 @@ export const creditBalance = z.object({
 });
 export type CreditBalance = z.infer<typeof creditBalance>;
 
+// ---------- Admin (email-allowlisted surface) ----------
+
+// One row of the admin user list — the D1 `users` projection. `createdAt` is an
+// epoch-millis timestamp (null only if the projection predates the column).
+export const adminUser = z.object({
+  id: z.string(),
+  email: z.string(),
+  credits: z.number().int(),
+  createdAt: z.number().int().nullable(),
+});
+export type AdminUser = z.infer<typeof adminUser>;
+
+export const adminUsersResult = z.object({
+  users: z.array(adminUser),
+});
+export type AdminUsersResult = z.infer<typeof adminUsersResult>;
+
+// Grant gratis credits to a user (comps/support). Positive-only for v1 — the
+// DO's grant() adds; adjust-down/refunds are a later addition.
+export const adminGrantInput = z.object({
+  amount: z.number().int().min(1).max(100_000),
+  reason: z.string().max(200).optional(),
+});
+export type AdminGrantInput = z.infer<typeof adminGrantInput>;
+
+export const adminGrantResult = z.object({
+  userId: z.string(),
+  credits: z.number().int(),
+});
+export type AdminGrantResult = z.infer<typeof adminGrantResult>;
+
+// Whoami for the SPA to gate the /admin route + nav link. 200 ⇒ admin.
+export const adminMeResult = z.object({
+  email: z.string(),
+});
+export type AdminMeResult = z.infer<typeof adminMeResult>;
+
 export const apiError = z.object({
   error: z.string(),
   code: z.enum([

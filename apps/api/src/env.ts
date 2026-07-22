@@ -22,6 +22,9 @@ export interface Env {
   // Svix signing secret for the Clerk user.created webhook (whsec_…). Optional
   // until the webhook is wired.
   CLERK_WEBHOOK_SECRET?: string;
+  // Comma-separated allowlist of admin emails (e.g. "john.titus@gmail.com").
+  // Gates the /api/admin/* surface (requireAdmin). Optional — unset ⇒ admin off.
+  ADMIN_EMAILS?: string;
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
   RESEND_API_KEY: string;
@@ -32,4 +35,7 @@ export interface Variables {
   // The authenticated Clerk user ID, or null when the request is signed-out.
   // Populated by the auth middleware from a verified session JWT.
   userId: string | null;
+  // The verified admin email, set by requireAdmin once the allowlist check
+  // passes (only present on /api/admin/* requests).
+  adminEmail?: string;
 }
