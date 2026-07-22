@@ -4,6 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
 import { KeywordAutosuggest } from "../components/KeywordAutosuggest.js";
+import { ButtonSpinner, RotatingStatus } from "../components/RotatingStatus.js";
+
+// Playful, on-topic status lines that cycle while a deep dive runs.
+const DEEP_DIVE_STATUS = [
+  "Lining up the books that rank page one…",
+  "Pulling covers, prices, and ratings…",
+  "Reading the bestseller ranks…",
+  "Sniffing out blank journals wearing a keyword…",
+  "Sizing up the competition…",
+];
 
 /**
  * Step 2 of the loop: who ranks P1 for a keyword, each competitor enriched with
@@ -361,9 +371,17 @@ export function DeepDivePage() {
           disabled={busy}
           className="rounded-lg bg-clay px-6 py-3 font-semibold text-white shadow-sm transition-colors hover:bg-clay-dark disabled:opacity-50"
         >
-          {busy ? "Working…" : "Find competitors"}
+          {busy ? (
+            <span className="inline-flex items-center justify-center gap-2">
+              <ButtonSpinner /> Working…
+            </span>
+          ) : (
+            "Find competitors"
+          )}
         </button>
       </form>
+
+      <RotatingStatus messages={DEEP_DIVE_STATUS} active={busy} />
 
       {status === "error" && <p className="mt-4 text-sm text-clay-dark">{error}</p>}
 

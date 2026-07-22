@@ -4,6 +4,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { KeywordAutosuggest } from '../components/KeywordAutosuggest.js';
+import { ButtonSpinner, RotatingStatus } from '../components/RotatingStatus.js';
+
+// Playful, on-topic status lines that cycle while a search runs.
+const SEARCH_STATUS = [
+  'Asking Amazon what book buyers actually type…',
+  'Walking the keyword graph…',
+  'Mining competitor books for keywords they own…',
+  'Tallying monthly US searches…',
+  'Sorting the gems from the junk…',
+];
 
 /**
  * Step 1 of the loop (brief §1): seed keyword → the full path (related keywords +
@@ -204,12 +214,22 @@ export function SearchPage() {
           disabled={search.isPending}
           className="min-w-[9rem] rounded-lg bg-clay px-6 py-3 font-semibold text-white shadow-sm transition-colors hover:bg-clay-dark disabled:opacity-50"
         >
-          {search.isPending ? 'Searching…' : 'Search'}
+          {search.isPending ? (
+            <span className="inline-flex items-center justify-center gap-2">
+              <ButtonSpinner /> Searching…
+            </span>
+          ) : (
+            'Search'
+          )}
         </button>
       </form>
-      <p className="mt-3 font-mono text-sm text-muted">
-        Tip: seed book-native language like “… workbook”, “… journal”, “… for kids”.
-      </p>
+      {search.isPending ? (
+        <RotatingStatus messages={SEARCH_STATUS} active={search.isPending} />
+      ) : (
+        <p className="mt-3 font-mono text-sm text-muted">
+          Tip: seed book-native language like “… workbook”, “… journal”, “… for kids”.
+        </p>
+      )}
 
       {search.isError && (
         <p className="mt-4 text-sm text-clay-dark">{(search.error as Error).message}</p>

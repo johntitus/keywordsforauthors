@@ -3,6 +3,16 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
+import { ButtonSpinner, RotatingStatus } from "../components/RotatingStatus.js";
+
+// Playful, on-topic status lines that cycle while a reverse-ASIN run works.
+const REVERSE_STATUS = [
+  "Reverse-engineering these books…",
+  "Extracting the keywords they own…",
+  "Filtering out the WiFi-extender nonsense…",
+  "Ranking keywords by search volume…",
+  "Folding every book into one keyword list…",
+];
 
 /**
  * Step 3 of the loop: the keywords a book actually ranks for. Arrives with a
@@ -401,14 +411,22 @@ export function ReverseAsinPage() {
           disabled={reverse.isFetching || validChips.length === 0}
           className="rounded-lg bg-clay px-6 py-3 font-semibold text-white shadow-sm transition-colors hover:bg-clay-dark disabled:opacity-50"
         >
-          {reverse.isFetching
-            ? "Fetching…"
-            : `Reverse ${validChips.length || ""} ASIN${validChips.length === 1 ? "" : "s"}`}
+          {reverse.isFetching ? (
+            <span className="inline-flex items-center justify-center gap-2">
+              <ButtonSpinner /> Fetching…
+            </span>
+          ) : (
+            `Reverse ${validChips.length || ""} ASIN${validChips.length === 1 ? "" : "s"}`
+          )}
         </button>
       </form>
-      <p className="mt-3 font-mono text-sm text-muted">
-        Press comma, space, or tab after each ASIN; enter runs the search. One credit per search.
-      </p>
+      {reverse.isFetching ? (
+        <RotatingStatus messages={REVERSE_STATUS} active={reverse.isFetching} />
+      ) : (
+        <p className="mt-3 font-mono text-sm text-muted">
+          Press comma, space, or tab after each ASIN; enter runs the search. One credit per search.
+        </p>
+      )}
 
       {reverse.isError && (
         <p className="mt-4 text-sm text-clay-dark">{(reverse.error as Error).message}</p>

@@ -37,3 +37,16 @@ body {
 button:not(:disabled) {
   cursor: pointer;
 }
+
+/* Soft cross-fade for the rotating "working…" status line under each tool's
+   input. Re-keyed on every message so React remounts the span and replays it. */
+@keyframes kfa-status-fade {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
